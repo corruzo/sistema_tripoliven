@@ -1,0 +1,34 @@
+version: '3.8'
+
+services:
+  # Servidor Backend (Express + SQLite)
+  backend:
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+    container_name: tripoliven_backend
+    ports:
+      - "4000:4000"
+    volumes:
+      # Volumen persistente para que la base de datos no se pierda al apagar el contenedor
+      - tripoliven_db_data:/app/database
+    environment:
+      - NODE_ENV=production
+      - PORT=4000
+    restart: always
+
+  # Interfaz Frontend (React + Nginx)
+  frontend:
+    build:
+      context: ./client
+      dockerfile: Dockerfile
+    container_name: tripoliven_frontend
+    ports:
+      - "5173:80"
+    depends_on:
+      - backend
+    restart: always
+
+volumes:
+  # Definición del volumen persistente para SQLite
+  tripoliven_db_data:

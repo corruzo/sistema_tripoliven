@@ -1,0 +1,28 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Node modules
+node_modules/
+server/node_modules/
+client/node_modules/
+
+# Build files
+client/dist/
+client/dist-electron/
+dist/
+
+# Env
+.env
+.env.local
+
+# SQLite temp files
+server/database.sqlite-shm
+server/database.sqlite-wal
+
+# OS files
+.DS_Store
+Thumbs.db
