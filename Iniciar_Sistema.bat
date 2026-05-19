@@ -1,4 +1,5 @@
 @echo off
+cd /d "%~dp0"
 title Sistema Tripoliven - Gestor de Inicio Automatico
 color 0B
 echo ===============================================================================
@@ -19,7 +20,7 @@ if %errorlevel% neq 0 (
 :: Comprobar si las dependencias raiz ya fueron instaladas
 if not exist "node_modules" (
     echo [INFO] Primera ejecucion detectada en este equipo.
-    echo [INFO] Instalando dependencias globales y modulos (esto solo tomara un momento)...
+    echo [INFO] Instalando dependencias globales y modulos - esto solo tomara un momento...
     call npm run install:all
     echo.
     echo [EXITO] Dependencias instaladas correctamente.
