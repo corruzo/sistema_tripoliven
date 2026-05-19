@@ -24,8 +24,8 @@ Esta guía te explica el paso a paso exacto para descargar, instalar y poner en 
 Abre tu terminal (PowerShell, CMD o Git Bash) en la carpeta donde desees alojar el sistema (por ejemplo, tu Escritorio) y ejecuta:
 
 ```powershell
-git clone https://github.com/TU_USUARIO/sistema-tripoliven.git
-cd sistema-tripoliven
+git clone https://github.com/corruzo/sistema_tripoliven.git
+cd sistema_tripoliven
 ```
 
 *(Reemplaza `TU_USUARIO` por tu usuario real de GitHub o la URL del repositorio).*
