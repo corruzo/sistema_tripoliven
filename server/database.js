@@ -98,9 +98,29 @@ const db = new sqlite3.Database(dbPath, (err) => {
                 FOREIGN KEY (created_by) REFERENCES users (id)
             )`);
 
-            // Índices de optimización de rendimiento para consultas concurrentes de despachos
+            // 7. Crear Tabla de Logs de Auditoría
+            db.run(`CREATE TABLE IF NOT EXISTS audit_logs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER,
+                action TEXT NOT NULL,
+                details TEXT,
+                ip_address TEXT,
+                createdAt DATETIME DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (user_id) REFERENCES users (id)
+            )`);
+
+            // Índices de optimización de rendimiento para consultas concurrentes y búsquedas rápidas
             db.run("CREATE INDEX IF NOT EXISTS idx_dispatches_dispatch_date ON dispatches(dispatch_datetime);");
-            db.run("CREATE INDEX IF NOT EXISTS idx_dispatches_product_type ON dispatches(product_type);");            // 6. Semillar Datos de Departamentos, Cargos, Usuarios (Solo Administrador de Sistema)
+            db.run("CREATE INDEX IF NOT EXISTS idx_dispatches_product_type ON dispatches(product_type);");
+            db.run("CREATE INDEX IF NOT EXISTS idx_dispatches_client_id ON dispatches(client_id);");
+            db.run("CREATE INDEX IF NOT EXISTS idx_dispatches_created_by ON dispatches(created_by);");
+            db.run("CREATE INDEX IF NOT EXISTS idx_positions_department_id ON positions(department_id);");
+            db.run("CREATE INDEX IF NOT EXISTS idx_users_position_id ON users(position_id);");
+            db.run("CREATE INDEX IF NOT EXISTS idx_users_department_id ON users(department_id);");
+            db.run("CREATE INDEX IF NOT EXISTS idx_audit_logs_user_id ON audit_logs(user_id);");
+            db.run("CREATE INDEX IF NOT EXISTS idx_audit_logs_created_at ON audit_logs(createdAt);");
+
+            // 6. Semillar Datos de Departamentos, Cargos, Usuarios (Solo Administrador de Sistema)
             db.get("SELECT count(*) as count FROM departments", (err, row) => {
                 if (row && row.count === 0) {
                     console.log('Migración: Inicializando departamentos y cargos...');
@@ -114,7 +134,7 @@ const db = new sqlite3.Database(dbPath, (err) => {
  
                         // Semillar Usuario Administrador Maestro
                         const stmt = db.prepare("INSERT INTO users (name, email, username, password, system_role, status, position_id, department_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
-                        stmt.run('Admin OmniDispatch', 'admin@omnidispatch.com', 'admin', 'admin123', 'Administrador', 'Activo', 1, 1);
+                        stmt.run('Admin TripoliERP', 'admin@tripolierp.com', 'admin', 'admin123', 'Administrador', 'Activo', 1, 1);
                         stmt.finalize(() => {
                             console.log('Migración: Estructura de personal cargada con éxito.');
                         });
@@ -138,5 +158,21 @@ const db = new sqlite3.Database(dbPath, (err) => {
         });
     }
 });
+
+// Helper para registro de auditoría a nivel de servidor (blindado contra rechazos de promesa)
+db.logAudit = (userId, action, details, ipAddress) => {
+    return new Promise((resolve) => {
+        db.run(
+            `INSERT INTO audit_logs (user_id, action, details, ip_address) VALUES (?, ?, ?, ?)`,
+            [userId || null, action, details || null, ipAddress || null],
+            (err) => {
+                if (err) {
+                    console.error('⚠️ [AUDITORÍA] Error al registrar log de auditoría:', err.message);
+                }
+                resolve(); // Resolver siempre de forma defensiva para evitar bloquear la transacción comercial base
+            }
+        );
+    });
+};
 
 module.exports = db;

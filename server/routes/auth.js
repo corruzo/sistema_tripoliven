@@ -17,10 +17,16 @@ router.post('/login', (req, res) => {
         WHERE u.username = ? AND u.password = ? AND u.status = 'Activo'
     `;
     db.get(query, [username, password], (err, row) => {
-        if (err) return res.status(500).json({ error: 'Error interno en la autenticación: ' + err.message });
+        const ip = req.ip || req.connection.remoteAddress;
+        if (err) {
+            db.logAudit(null, 'INICIO_SESION_ERROR', `Error del sistema en autenticación: ${err.message}`, ip);
+            return res.status(500).json({ error: 'Error interno en la autenticación: ' + err.message });
+        }
         if (!row) {
+            db.logAudit(null, 'INICIO_SESION_FALLIDO', `Intento de acceso fallido con el usuario: "${username}".`, ip);
             return res.status(401).json({ error: 'Usuario o contraseña incorrectos, o cuenta inactiva.' });
         }
+        db.logAudit(row.id, 'INICIO_SESION_EXITOSO', `Sesión iniciada correctamente. Rol: ${row.system_role}.`, ip);
         res.json({ success: true, user: row });
     });
 });

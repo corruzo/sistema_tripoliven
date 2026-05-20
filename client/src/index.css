@@ -208,20 +208,84 @@ body {
   background: var(--text-secondary);
 }
 
-/* Layout */
+/* Custom Draggable Window Titlebar */
+.window-titlebar {
+  height: 28px;
+  background: rgba(15, 23, 42, 0.85);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--glass-border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 16px;
+  font-size: 0.725rem;
+  color: var(--text-secondary);
+  font-weight: 500;
+  user-select: none;
+  -webkit-app-region: drag;
+  z-index: 9999;
+}
+
+[data-theme='light'] .window-titlebar {
+  background: rgba(255, 255, 255, 0.9);
+  border-bottom: 1px solid rgba(15, 23, 42, 0.08);
+}
+
+.window-titlebar-logo {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.titlebar-logo-icon {
+  color: var(--accent-primary);
+  animation: spin-slow 8s linear infinite;
+}
+
+@keyframes spin-slow {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.window-titlebar-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.675rem;
+}
+
+.window-titlebar-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--success);
+  box-shadow: 0 0 6px var(--success);
+}
+
+/* Layout Restructure */
 .app-container {
   display: flex;
+  flex-direction: column;
   height: 100vh;
   overflow: hidden;
+}
+
+.app-layout {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+  height: calc(100vh - 28px);
 }
 
 .main-content {
   flex: 1;
   display: flex;
   flex-direction: column;
-  overflow-y: auto;
-  overflow-x: hidden;
-  padding: 2rem;
+  overflow: hidden; /* Anti-scroll constraints */
+  padding: 1.25rem 1.5rem !important;
   position: relative;
 }
 
@@ -238,7 +302,7 @@ body {
   z-index: 0;
 }
 
-/* Sidebar */
+/* Sidebar Collapsible Design */
 .sidebar {
   width: 260px;
   background: var(--glass-bg);
@@ -247,15 +311,53 @@ body {
   border-right: 1px solid var(--glass-border);
   display: flex;
   flex-direction: column;
-  padding: 1.5rem;
+  padding: 1rem 0.75rem;
   z-index: 10;
+  transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1), padding 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  overflow: hidden;
+}
+
+.sidebar.collapsed {
+  width: 78px;
+  padding: 1rem 0.25rem;
+}
+
+.sidebar.collapsed .sidebar-logo {
+  justify-content: center !important;
+}
+
+.sidebar.collapsed .nav-item {
+  position: relative;
+  justify-content: center;
+  padding: 12px !important;
+  margin: 4px auto;
+  width: 48px;
+  height: 48px;
+  border-radius: 12px;
+}
+
+.sidebar.collapsed .nav-item span {
+  display: none;
+}
+
+.sidebar.collapsed .sidebar-toggle-btn {
+  background: var(--bg-secondary) !important;
+  border: 1px solid var(--glass-border) !important;
+  box-shadow: 0 4px 10px rgba(0,0,0,0.3) !important;
+  z-index: 20;
+}
+
+[data-theme='light'] .sidebar.collapsed .sidebar-toggle-btn {
+  background: #ffffff !important;
+  border: 1px solid rgba(15, 23, 42, 0.1) !important;
+  box-shadow: 0 4px 10px rgba(15, 23, 42, 0.1) !important;
 }
 
 .sidebar-logo {
   display: flex;
   align-items: center;
   gap: 12px;
-  margin-bottom: 3rem;
+  margin-bottom: 2rem;
   padding: 0 0.5rem;
 }
 
@@ -321,13 +423,60 @@ body {
   transform: translateX(4px);
 }
 
+/* Active Glowing pill */
 .nav-item.active {
-  color: white;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+  background: var(--accent-gradient) !important;
+  color: white !important;
+  box-shadow: 0 0 15px rgba(99, 102, 241, 0.4) !important;
+  border: 1px solid rgba(255, 255, 255, 0.1);
 }
 
-.nav-item.active::before {
-  opacity: 1;
+[data-theme='light'] .nav-item.active {
+  box-shadow: 0 0 15px rgba(37, 99, 235, 0.25) !important;
+  border: 1px solid rgba(37, 99, 235, 0.15);
+}
+
+/* Native CSS Tooltip on Collapse Hover */
+.sidebar.collapsed .nav-item[data-tooltip]:hover::after {
+  content: attr(data-tooltip);
+  position: fixed;
+  left: 88px;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  padding: 6px 12px;
+  border-radius: 8px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  white-space: nowrap;
+  border: 1px solid var(--glass-border);
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.4);
+  z-index: 99999;
+  pointer-events: none;
+  animation: fadeIn 0.2s ease;
+}
+
+[data-theme='light'] .sidebar.collapsed .nav-item[data-tooltip]:hover::after {
+  background: #ffffff;
+  color: #0f172a;
+  border: 1px solid rgba(15, 23, 42, 0.1);
+  box-shadow: 0 10px 25px rgba(15, 23, 42, 0.1);
+}
+
+/* led-pulse Keyframes */
+.led-pulse {
+  animation: pulse-green 2s infinite;
+}
+
+@keyframes pulse-green {
+  0% {
+    box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7);
+  }
+  70% {
+    box-shadow: 0 0 0 6px rgba(16, 185, 129, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(16, 185, 129, 0);
+  }
 }
 
 /* Dashboard Widgets */
@@ -691,3 +840,100 @@ body {
   border-bottom: 1px solid var(--glass-border);
   margin-bottom: 8px;
 }
+
+/* PREMIUM ANTI-SCROLL & COMPACT INTERFACE UTILITIES */
+.table-scrollable {
+  max-height: calc(100vh - 280px);
+  overflow-y: auto;
+  position: relative;
+  scrollbar-width: thin;
+  scrollbar-color: var(--bg-tertiary) transparent;
+  border-radius: 12px;
+}
+
+.table-scrollable::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.table-scrollable::-webkit-scrollbar-thumb {
+  background: var(--bg-tertiary);
+  border-radius: 3px;
+}
+
+.table-scrollable::-webkit-scrollbar-thumb:hover {
+  background: var(--text-secondary);
+}
+
+.modern-table th {
+  position: sticky !important;
+  top: 0;
+  z-index: 10;
+  background: var(--bg-secondary) !important;
+  box-shadow: 0 1px 0 var(--border-color);
+}
+
+[data-theme='light'] .modern-table th {
+  background: #f8fafc !important;
+  box-shadow: 0 1px 0 rgba(15, 23, 42, 0.1);
+}
+
+.modern-table.compact-table td {
+  padding: 10px 14px !important;
+  font-size: 0.85rem !important;
+}
+
+.compact-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.card-slim {
+  padding: 1rem !important;
+  border-radius: 14px !important;
+}
+
+.main-content {
+  padding: 1.25rem 1.5rem !important;
+  height: 100vh;
+  overflow: hidden;
+}
+
+.main-content-scrollable {
+  flex: 1;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+/* Reducción de márgenes y tamaños globales para prevenir scroll vertical de pantalla */
+.page-header {
+  margin-bottom: 1rem !important;
+}
+
+.page-header h1 {
+  font-size: 1.6rem !important;
+}
+
+.dashboard-grid {
+  gap: 1rem !important;
+  margin-bottom: 1.25rem !important;
+}
+
+.stat-card {
+  padding: 1rem 1.25rem !important;
+  border-radius: 14px !important;
+}
+
+.stat-icon {
+  width: 48px !important;
+  height: 48px !important;
+  border-radius: 12px !important;
+}
+
+.table-container {
+  padding: 1rem 1.25rem !important;
+  border-radius: 14px !important;
+}
+

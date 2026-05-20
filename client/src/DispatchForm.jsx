@@ -54,6 +54,9 @@ export default function DispatchForm() {
     const [draftSavedTime, setDraftSavedTime] = useState(null);
     const isRestoringRef = useRef(false);
 
+    const [orderNumberError, setOrderNumberError] = useState('');
+    const [checkingOrderNumber, setCheckingOrderNumber] = useState(false);
+
     useEffect(() => {
         const init = async () => {
             await Promise.all([loadProductTypes(), loadClients()]);
@@ -220,21 +223,100 @@ export default function DispatchForm() {
         }
         
         try {
-            const resD = await fetch(`${API_BASE_URL}/api/dispatches`);
-            let nextNum = 1;
-            if (resD.ok) {
-                const dList = await resD.json();
-                if (dList.length > 0) {
-                    nextNum = parseInt(dList[0].order_number.split('-')[2] || '0', 10) + 1;
-                }
+            const resN = await fetch(`${API_BASE_URL}/api/dispatches/next-order-number`);
+            let nextOrderNum = '';
+            if (resN.ok) {
+                const data = await resN.json();
+                nextOrderNum = data.nextOrderNumber;
+            }
+            if (!nextOrderNum) {
+                nextOrderNum = 'TRP09X';
             }
             setFormData(prev => ({
                 ...prev,
                 dispatch_datetime: serverDate,
-                order_number: `ORD-2026-${String(nextNum).padStart(4, '0')}`
+                order_number: nextOrderNum
             }));
+            setOrderNumberError('');
         } catch (err) {
             console.error(err);
+        }
+    };
+
+    const checkOrderUniqueness = async (orderNum) => {
+        if (!orderNum || !orderNum.trim()) {
+            setOrderNumberError('El número de orden es obligatorio.');
+            return false;
+        }
+
+        const valTrim = orderNum.trim();
+        // Validar formato de 6 o 7 caracteres alfanuméricos
+        const isFormatValid = /^[a-zA-Z0-9]{6,7}$/.test(valTrim);
+        if (!isFormatValid) {
+            setOrderNumberError('El número de orden debe tener exactamente 6 o 7 caracteres (letras y números sin espacios).');
+            return false;
+        }
+        
+        setCheckingOrderNumber(true);
+        try {
+            let url = `${API_BASE_URL}/api/dispatches/check-order?order_number=${encodeURIComponent(valTrim)}`;
+            if (isEdit) {
+                url += `&excludeId=${id}`;
+            }
+            const res = await fetch(url);
+            if (res.ok) {
+                const data = await res.json();
+                if (data.exists) {
+                    setOrderNumberError('El número de orden alfanumérico ya se encuentra registrado.');
+                    setCheckingOrderNumber(false);
+                    return false;
+                }
+            }
+            setOrderNumberError('');
+            setCheckingOrderNumber(false);
+            return true;
+        } catch (err) {
+            console.error('Error al validar número de orden:', err);
+            setCheckingOrderNumber(false);
+            return true;
+        }
+    };
+
+    const handleOrderNumberChange = (e) => {
+        const val = e.target.value;
+        setFormData(prev => ({ ...prev, order_number: val }));
+        
+        if (val.trim() === '') {
+            setOrderNumberError('El número de orden es obligatorio y no puede estar vacío.');
+        } else {
+            const isFormatValid = /^[a-zA-Z0-9]{6,7}$/.test(val.trim());
+            if (!isFormatValid) {
+                setOrderNumberError('El número de orden debe tener exactamente 6 o 7 caracteres (letras y números sin espacios).');
+            } else {
+                checkOrderUniqueness(val);
+            }
+        }
+    };
+
+    const handleOrderNumberBlur = async () => {
+        if (!formData.order_number || !formData.order_number.trim()) {
+            try {
+                const resN = await fetch(`${API_BASE_URL}/api/dispatches/next-order-number`);
+                let nextOrderNum = '';
+                if (resN.ok) {
+                    const data = await resN.json();
+                    nextOrderNum = data.nextOrderNumber;
+                }
+                if (!nextOrderNum) {
+                    nextOrderNum = 'TRP09X';
+                }
+                setFormData(prev => ({ ...prev, order_number: nextOrderNum }));
+                setOrderNumberError('');
+            } catch (err) {
+                console.error(err);
+            }
+        } else {
+            checkOrderUniqueness(formData.order_number);
         }
     };
 
@@ -243,6 +325,17 @@ export default function DispatchForm() {
         
         if (!formData.client_id) {
             alert('Debe seleccionar un cliente del directorio.');
+            return;
+        }
+
+        if (!formData.order_number || !formData.order_number.trim()) {
+            alert('El número de orden es obligatorio y no puede quedar vacío.');
+            return;
+        }
+
+        const isUnique = await checkOrderUniqueness(formData.order_number);
+        if (!isUnique) {
+            alert('El número de orden o factura ingresado ya se encuentra registrado. Por favor, especifique uno diferente.');
             return;
         }
 
@@ -428,15 +521,23 @@ export default function DispatchForm() {
                             <label style={{ display: 'block', marginBottom: '8px', color: 'var(--text-secondary)', fontSize: '0.9rem', fontWeight: '600' }}>Número de Orden *</label>
                             <input 
                                 required
-                                readOnly
                                 type="text"
                                 value={formData.order_number}
+                                onChange={handleOrderNumberChange}
+                                onBlur={handleOrderNumberBlur}
+                                placeholder="Ej: ORD-2026-0001"
                                 style={{ 
                                     width: '100%', padding: '14px 16px', borderRadius: '14px', background: 'var(--bg-tertiary)', 
-                                    border: '1px solid var(--glass-border)', color: 'var(--text-secondary)', fontFamily: 'inherit', 
-                                    fontSize: '0.95rem', cursor: 'not-allowed', fontWeight: '700' 
+                                    border: `1px solid ${orderNumberError ? '#f87171' : 'var(--glass-border)'}`, 
+                                    color: 'var(--text-primary)', fontFamily: 'inherit', 
+                                    fontSize: '0.95rem', fontWeight: '700', outline: 'none', transition: 'all 0.2s'
                                 }}
                             />
+                            {orderNumberError && (
+                                <div style={{ fontSize: '0.8rem', color: '#f87171', marginTop: '6px', fontWeight: '600' }}>
+                                    ⚠️ {orderNumberError}
+                                </div>
+                            )}
                         </div>
                         <div>
                             <label style={{ display: 'block', marginBottom: '8px', color: 'var(--text-secondary)', fontSize: '0.9rem', fontWeight: '600' }}>Fecha y Hora Exacta de Salida *</label>
@@ -711,12 +812,15 @@ export default function DispatchForm() {
                         </button>
                         <button 
                             type="submit"
-                            disabled={saving}
+                            disabled={saving || Boolean(orderNumberError)}
                             style={{ 
                                 background: 'var(--accent-gradient)', border: 'none', color: '#ffffff', 
-                                padding: '14px 36px', borderRadius: '14px', cursor: 'pointer', fontWeight: '700', 
+                                padding: '14px 36px', borderRadius: '14px', 
+                                cursor: (saving || Boolean(orderNumberError)) ? 'not-allowed' : 'pointer', 
+                                fontWeight: '700', 
                                 fontSize: '0.95rem', display: 'flex', alignItems: 'center', gap: '10px', 
-                                boxShadow: '0 8px 25px rgba(37, 99, 235, 0.35)', transition: 'all 0.2s', opacity: saving ? 0.7 : 1 
+                                boxShadow: '0 8px 25px rgba(37, 99, 235, 0.35)', transition: 'all 0.2s', 
+                                opacity: (saving || Boolean(orderNumberError)) ? 0.6 : 1 
                             }}
                             onMouseOver={e => e.currentTarget.style.opacity = 0.9}
                             onMouseOut={e => e.currentTarget.style.opacity = 1}

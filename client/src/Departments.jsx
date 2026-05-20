@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Trash2, Edit, Plus, X, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Trash2, Edit, Plus, X, ChevronLeft, ChevronRight, ShieldAlert } from 'lucide-react';
 import { API_BASE_URL } from './config';
 
 const Departments = () => {
@@ -18,6 +18,9 @@ const Departments = () => {
   const indexOfFirstItem = indexOfLastItem - itemsPerPage;
   const currentDepartments = departments.slice(indexOfFirstItem, indexOfLastItem);
 
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
   useEffect(() => {
     if (currentPage > totalPages && totalPages > 0) {
       setCurrentPage(totalPages);
@@ -25,17 +28,37 @@ const Departments = () => {
   }, [departments.length, totalPages]);
 
   const loadDepartments = () => {
+    setLoading(true);
+    setError(null);
     fetch(`${API_BASE_URL}/api/departments`)
-      .then(res => res.json())
-      .then(data => setDepartments(data))
-      .catch(err => console.error(err));
+      .then(res => {
+        if (!res.ok) {
+          throw new Error(`El servidor respondió con código ${res.status}`);
+        }
+        return res.json();
+      })
+      .then(data => {
+        setDepartments(data || []);
+        setError(null);
+        setLoading(false);
+      })
+      .catch(err => {
+        console.error('Error al cargar departamentos:', err);
+        setError('No se pudo establecer conexión con el servidor de TripoliERP. Mostrando registros locales de resguardo.');
+        setLoading(false);
+      });
   };
 
   const loadUsers = () => {
     fetch(`${API_BASE_URL}/api/users`)
-      .then(res => res.json())
-      .then(data => setUsers(data))
-      .catch(err => console.error(err));
+      .then(res => {
+        if (!res.ok) {
+          throw new Error(`Error en usuarios: ${res.status}`);
+        }
+        return res.json();
+      })
+      .then(data => setUsers(data || []))
+      .catch(err => console.error('Error al cargar personal para departamentos:', err));
   };
 
   useEffect(() => {
@@ -121,108 +144,143 @@ const Departments = () => {
           </button>
         </div>
 
-        <table className="modern-table">
-          <thead>
-            <tr>
-              <th>ID</th>
-              <th>NOMBRE</th>
-              <th>ENCARGADO LÍDER</th>
-              <th>DESCRIPCIÓN</th>
-              <th>ACCIONES</th>
-            </tr>
-          </thead>
-          <tbody>
-            {currentDepartments.map(dept => (
-              <tr key={dept.id}>
-                <td><span style={{ color: 'var(--text-secondary)' }}>#{dept.id}</span></td>
-                <td><span style={{ fontWeight: 500 }}>{dept.name}</span></td>
-                <td>
-                  {dept.manager_name ? (
-                    <span style={{ color: 'var(--accent-primary)', fontWeight: '500' }}>{dept.manager_name}</span>
-                  ) : (
-                    <span style={{ color: 'var(--text-secondary)' }}>Sin encargado</span>
-                  )}
-                </td>
-                <td style={{ color: 'var(--text-secondary)' }}>{dept.description || 'Sin descripción'}</td>
-                <td>
-                  <div style={{ display: 'flex', gap: '8px' }}>
-                    <button style={{
-                      background: 'transparent', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', padding: '8px', borderRadius: '8px', transition: 'all 0.2s'
-                    }}
-                    onClick={() => handleOpenModal(dept)}
-                    onMouseOver={e => { e.currentTarget.style.color = 'var(--text-primary)'; e.currentTarget.style.background = 'rgba(255,255,255,0.05)'; }}
-                    onMouseOut={e => { e.currentTarget.style.color = 'var(--text-secondary)'; e.currentTarget.style.background = 'transparent'; }}>
-                      <Edit size={18} />
-                    </button>
-                    <button style={{
-                      background: 'transparent', border: 'none', color: 'var(--danger)', cursor: 'pointer', padding: '8px', borderRadius: '8px', transition: 'all 0.2s'
-                    }}
-                    onClick={() => handleDelete(dept.id)}
-                    onMouseOver={e => { e.currentTarget.style.background = 'rgba(239, 68, 68, 0.1)'; }}
-                    onMouseOut={e => { e.currentTarget.style.background = 'transparent'; }}>
-                      <Trash2 size={18} />
-                    </button>
-                  </div>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-
-        {/* Pagination Bar */}
-        {totalPages > 1 && (
+        {error && (
           <div style={{
-            display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-            padding: '16px 24px', borderTop: '1px solid var(--glass-border)',
-            background: 'rgba(255, 255, 255, 0.01)', borderBottomLeftRadius: '16px', borderBottomRightRadius: '16px'
+            background: 'rgba(239, 68, 68, 0.08)',
+            backdropFilter: 'blur(10px)',
+            border: '1px solid rgba(239, 68, 68, 0.2)',
+            borderRadius: '16px',
+            padding: '16px 24px',
+            marginBottom: '20px',
+            color: '#fca5a5',
+            fontSize: '0.9rem',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '14px',
+            boxShadow: '0 8px 32px rgba(239, 68, 68, 0.05)',
+            animation: 'fadeIn 0.3s ease-out'
           }}>
-            <div style={{ color: 'var(--text-secondary)', fontSize: '0.85rem' }}>
-              Mostrando <span style={{ color: 'white', fontWeight: '600' }}>{indexOfFirstItem + 1}</span> a <span style={{ color: 'white', fontWeight: '600' }}>{Math.min(indexOfLastItem, departments.length)}</span> de <span style={{ color: 'white', fontWeight: '600' }}>{departments.length}</span> registros
-            </div>
-            
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <button
-                disabled={currentPage === 1}
-                onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
-                style={{
-                  background: currentPage === 1 ? 'transparent' : 'rgba(255, 255, 255, 0.03)',
-                  border: '1px solid var(--glass-border)', color: currentPage === 1 ? 'rgba(255,255,255,0.2)' : 'white',
-                  width: '36px', height: '36px', borderRadius: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  cursor: currentPage === 1 ? 'not-allowed' : 'pointer', transition: 'all 0.2s'
-                }}
-              >
-                <ChevronLeft size={16} />
-              </button>
-
-              {Array.from({ length: totalPages }, (_, i) => i + 1).map(page => (
-                <button
-                  key={page}
-                  onClick={() => setCurrentPage(page)}
-                  style={{
-                    background: currentPage === page ? 'var(--accent-gradient)' : 'rgba(255, 255, 255, 0.03)',
-                    border: currentPage === page ? 'none' : '1px solid var(--glass-border)',
-                    color: 'white', fontWeight: '600', width: '36px', height: '36px', borderRadius: '10px',
-                    cursor: 'pointer', transition: 'all 0.2s'
-                  }}
-                >
-                  {page}
-                </button>
-              ))}
-
-              <button
-                disabled={currentPage === totalPages}
-                onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
-                style={{
-                  background: currentPage === totalPages ? 'transparent' : 'rgba(255, 255, 255, 0.03)',
-                  border: '1px solid var(--glass-border)', color: currentPage === totalPages ? 'rgba(255,255,255,0.2)' : 'white',
-                  width: '36px', height: '36px', borderRadius: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  cursor: currentPage === totalPages ? 'not-allowed' : 'pointer', transition: 'all 0.2s'
-                }}
-              >
-                <ChevronRight size={16} />
-              </button>
+            <ShieldAlert size={22} style={{ color: '#f87171', flexShrink: 0 }} />
+            <div>
+              <strong style={{ color: '#ef4444', fontWeight: 600 }}>Alerta de Conexión:</strong> {error}
             </div>
           </div>
+        )}
+
+        {loading ? (
+          <div style={{ padding: '60px', textAlign: 'center', color: 'var(--text-secondary)', fontSize: '0.95rem' }}>
+            Cargando el registro de departamentos...
+          </div>
+        ) : (
+          <>
+            <table className="modern-table">
+              <thead>
+                <tr>
+                  <th>ID</th>
+                  <th>NOMBRE</th>
+                  <th>ENCARGADO LÍDER</th>
+                  <th>DESCRIPCIÓN</th>
+                  <th>ACCIONES</th>
+                </tr>
+              </thead>
+              <tbody>
+                {currentDepartments.map(dept => (
+                  <tr key={dept.id}>
+                    <td><span style={{ color: 'var(--text-secondary)' }}>#{dept.id}</span></td>
+                    <td><span style={{ fontWeight: 500 }}>{dept.name}</span></td>
+                    <td>
+                      {dept.manager_name ? (
+                        <span style={{ color: 'var(--accent-primary)', fontWeight: '500' }}>{dept.manager_name}</span>
+                      ) : (
+                        <span style={{ color: 'var(--text-secondary)' }}>Sin encargado</span>
+                      )}
+                    </td>
+                    <td>
+                      <span style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>
+                        {dept.description || <span style={{ fontStyle: 'italic', opacity: 0.5 }}>Sin descripción</span>}
+                      </span>
+                    </td>
+                    <td>
+                      <div style={{ display: 'flex', gap: '8px' }}>
+                        <button style={{
+                          background: 'transparent', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', padding: '8px', borderRadius: '8px', transition: 'all 0.2s'
+                        }}
+                        onClick={() => handleOpenModal(dept)}
+                        onMouseOver={e => { e.currentTarget.style.color = 'white'; e.currentTarget.style.background = 'rgba(255,255,255,0.05)'; }}
+                        onMouseOut={e => { e.currentTarget.style.color = 'var(--text-secondary)'; e.currentTarget.style.background = 'transparent'; }}>
+                          <Edit size={18} />
+                        </button>
+                        <button style={{
+                          background: 'transparent', border: 'none', color: 'var(--danger)', cursor: 'pointer', padding: '8px', borderRadius: '8px', transition: 'all 0.2s'
+                        }}
+                        onClick={() => handleDelete(dept.id)}
+                        onMouseOver={e => { e.currentTarget.style.background = 'rgba(239, 68, 68, 0.1)'; }}
+                        onMouseOut={e => { e.currentTarget.style.background = 'transparent'; }}>
+                          <Trash2 size={18} />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+
+            {/* Pagination Bar */}
+            {totalPages > 1 && (
+              <div style={{
+                display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                padding: '16px 24px', borderTop: '1px solid var(--glass-border)',
+                background: 'rgba(255, 255, 255, 0.01)', borderBottomLeftRadius: '16px', borderBottomRightRadius: '16px'
+              }}>
+                <div style={{ color: 'var(--text-secondary)', fontSize: '0.85rem' }}>
+                  Mostrando <span style={{ color: 'white', fontWeight: '600' }}>{indexOfFirstItem + 1}</span> a <span style={{ color: 'white', fontWeight: '600' }}>{Math.min(indexOfLastItem, departments.length)}</span> de <span style={{ color: 'white', fontWeight: '600' }}>{departments.length}</span> registros
+                </div>
+                
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <button
+                    disabled={currentPage === 1}
+                    onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                    style={{
+                      background: currentPage === 1 ? 'transparent' : 'rgba(255, 255, 255, 0.03)',
+                      border: '1px solid var(--glass-border)', color: currentPage === 1 ? 'rgba(255,255,255,0.2)' : 'white',
+                      width: '36px', height: '36px', borderRadius: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      cursor: currentPage === 1 ? 'not-allowed' : 'pointer', transition: 'all 0.2s'
+                    }}
+                  >
+                    <ChevronLeft size={16} />
+                  </button>
+
+                  {Array.from({ length: totalPages }, (_, i) => i + 1).map(page => (
+                    <button
+                      key={page}
+                      onClick={() => setCurrentPage(page)}
+                      style={{
+                        background: currentPage === page ? 'var(--accent-gradient)' : 'rgba(255, 255, 255, 0.03)',
+                        border: currentPage === page ? 'none' : '1px solid var(--glass-border)',
+                        color: 'white', fontWeight: '600', width: '36px', height: '36px', borderRadius: '10px',
+                        cursor: 'pointer', transition: 'all 0.2s'
+                      }}
+                    >
+                      {page}
+                    </button>
+                  ))}
+
+                  <button
+                    disabled={currentPage === totalPages}
+                    onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                    style={{
+                      background: currentPage === totalPages ? 'transparent' : 'rgba(255, 255, 255, 0.03)',
+                      border: '1px solid var(--glass-border)', color: currentPage === totalPages ? 'rgba(255,255,255,0.2)' : 'white',
+                      width: '36px', height: '36px', borderRadius: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      cursor: currentPage === totalPages ? 'not-allowed' : 'pointer', transition: 'all 0.2s'
+                    }}
+                  >
+                    <ChevronRight size={16} />
+                  </button>
+                </div>
+              </div>
+            )}
+          </>
         )}
       </div>
 

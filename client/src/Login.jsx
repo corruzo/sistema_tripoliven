@@ -65,7 +65,7 @@ const Login = ({ onLoginSuccess }) => {
         </div>
 
         <h1 style={{ fontSize: '1.75rem', fontWeight: '700', color: 'white', margin: '0 0 8px 0', textAlign: 'center' }}>
-          OmniDispatch Enterprise
+          TripoliERP Enterprise
         </h1>
         <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem', margin: '0 0 32px 0', textAlign: 'center' }}>
           Ingresa tus credenciales para acceder al sistema

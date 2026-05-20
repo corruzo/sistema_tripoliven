@@ -52,6 +52,15 @@ const Dispatches = () => {
   const [statusFilter, setStatusFilter] = useState('Todos');
   const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
 
+  // PDF Export Advanced Modal States
+  const [showExportModal, setShowExportModal] = useState(false);
+  const [exportModalType, setExportModalType] = useState('current'); // 'current' or 'custom'
+  const [pdfStartDate, setPdfStartDate] = useState('');
+  const [pdfEndDate, setPdfEndDate] = useState('');
+  const [pdfProductType, setPdfProductType] = useState('Todos');
+  const [pdfClient, setPdfClient] = useState('Todos');
+  const [pdfStatus, setPdfStatus] = useState('Todos');
+
   // Obtener valores únicos dinámicos para los filtros a partir de los despachos cargados
   const uniqueClients = useMemo(() => {
     const clients = dispatches.map(d => d.client_name).filter(Boolean);
@@ -243,14 +252,64 @@ const Dispatches = () => {
     setActiveDropdownId(null);
   };
 
-  // Exportar a PDF corporativo con gráficos y tabla
-  const handleExportPDF = () => {
+  // Exportar a PDF corporativo con filtros avanzados o vista actual
+  const handleExecutePDFExport = () => {
+    let dataToExport = [];
+    let startD = '';
+    let endD = '';
+    let filtersObj = null;
+
+    if (exportModalType === 'current') {
+      dataToExport = filteredDispatches;
+      startD = startDate;
+      endD = endDate;
+      filtersObj = {
+        productType: productTypeFilter,
+        client: clientFilter,
+        status: statusFilter,
+        searchQuery: searchQuery
+      };
+    } else {
+      // Filtrar a mano según los filtros específicos del modal PDF
+      let result = [...dispatches];
+      if (pdfStartDate) {
+        result = result.filter(d => d.dispatch_datetime.split('T')[0] >= pdfStartDate);
+      }
+      if (pdfEndDate) {
+        result = result.filter(d => d.dispatch_datetime.split('T')[0] <= pdfEndDate);
+      }
+      if (pdfProductType !== 'Todos') {
+        result = result.filter(d => d.product_type === pdfProductType);
+      }
+      if (pdfClient !== 'Todos') {
+        result = result.filter(d => d.client_name === pdfClient);
+      }
+      if (pdfStatus !== 'Todos') {
+        result = result.filter(d => d.status === pdfStatus);
+      }
+      dataToExport = result;
+      startD = pdfStartDate;
+      endD = pdfEndDate;
+      filtersObj = {
+        productType: pdfProductType,
+        client: pdfClient,
+        status: pdfStatus,
+        searchQuery: ''
+      };
+    }
+
+    const activeForMetrics = dataToExport.filter(d => d.status !== 'Anulado');
+    const computedTotal = activeForMetrics.reduce((sum, d) => sum + Number(d.quantity_tm || 0), 0);
+
     exportDispatchesToPDF(
-      filteredDispatches,
-      startDate,
-      endDate,
-      totalQuantity
+      dataToExport,
+      startD,
+      endD,
+      computedTotal,
+      filtersObj
     );
+
+    setShowExportModal(false);
   };
 
   // ----------------------------------------------------
@@ -347,7 +406,15 @@ const Dispatches = () => {
             <Layers size={18} /> Tipos de Producto
           </Link>
           <button 
-            onClick={handleExportPDF}
+            onClick={() => {
+              setShowExportModal(true);
+              setExportModalType('current');
+              setPdfStartDate(startDate || '');
+              setPdfEndDate(endDate || '');
+              setPdfProductType(productTypeFilter);
+              setPdfClient(clientFilter);
+              setPdfStatus(statusFilter);
+            }}
             style={{
               background: 'rgba(255, 255, 255, 0.03)', border: '1px solid var(--glass-border)',
               color: '#3b82f6', padding: '10px 18px', borderRadius: '12px', cursor: 'pointer',
@@ -941,6 +1008,226 @@ const Dispatches = () => {
                 }}
               >
                 Cerrar Detalles
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL EXPORTACIÓN AVANZADA PDF */}
+      {showExportModal && (
+        <div 
+          onClick={() => setShowExportModal(false)}
+          style={{
+            position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+            background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(8px)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999,
+            padding: '20px'
+          }}
+        >
+          <div 
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              background: 'var(--bg-secondary)', border: '1px solid var(--glass-border)',
+              borderRadius: '28px', padding: '32px', width: '560px', maxWidth: '100%',
+              boxShadow: '0 24px 60px rgba(0,0,0,0.6)', maxHeight: '90vh', overflowY: 'auto',
+              position: 'relative'
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px', borderBottom: '1px solid var(--glass-border)', paddingBottom: '16px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <div style={{ padding: '10px', borderRadius: '12px', background: 'var(--accent-gradient)', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <FileText size={22} />
+                </div>
+                <div>
+                  <h2 style={{ margin: 0, color: 'white', fontSize: '1.3rem', fontWeight: '800' }}>Exportar Reporte PDF</h2>
+                  <p style={{ margin: 0, fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Configura los filtros de auditoría para tu documento corporativo.</p>
+                </div>
+              </div>
+              <button 
+                onClick={() => setShowExportModal(false)}
+                style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid var(--glass-border)', color: 'var(--text-secondary)', cursor: 'pointer', padding: '8px', borderRadius: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* PESTAÑAS DE MODO EXPORTACIÓN */}
+            <div style={{ display: 'flex', background: 'rgba(0,0,0,0.2)', padding: '4px', borderRadius: '12px', marginBottom: '20px' }}>
+              <button
+                onClick={() => setExportModalType('current')}
+                style={{
+                  flex: 1, padding: '10px', borderRadius: '10px', border: 'none', cursor: 'pointer',
+                  fontWeight: '600', fontSize: '0.85rem', transition: 'all 0.2s',
+                  background: exportModalType === 'current' ? 'var(--accent-gradient)' : 'transparent',
+                  color: 'white'
+                }}
+              >
+                Vista Actual ({filteredDispatches.length})
+              </button>
+              <button
+                onClick={() => setExportModalType('custom')}
+                style={{
+                  flex: 1, padding: '10px', borderRadius: '10px', border: 'none', cursor: 'pointer',
+                  fontWeight: '600', fontSize: '0.85rem', transition: 'all 0.2s',
+                  background: exportModalType === 'custom' ? 'var(--accent-gradient)' : 'transparent',
+                  color: 'white'
+                }}
+              >
+                Reporte Personalizado
+              </button>
+            </div>
+
+            {exportModalType === 'current' ? (
+              <div style={{ background: 'var(--bg-primary)', padding: '20px', borderRadius: '16px', border: '1px solid var(--glass-border)', marginBottom: '24px' }}>
+                <h4 style={{ margin: '0 0 10px 0', fontSize: '0.9rem', color: 'white' }}>Resumen de Filtros Activos</h4>
+                <p style={{ margin: '0 0 16px 0', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                  Se exportará exactamente lo que ves actualmente en la tabla del sistema.
+                </p>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', fontSize: '0.8rem' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <span style={{ color: 'var(--text-secondary)' }}>Rango de Fechas:</span>
+                    <span style={{ color: 'white', fontWeight: '500' }}>{startDate || 'Inicio'} al {endDate || 'Hoy'}</span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <span style={{ color: 'var(--text-secondary)' }}>Producto:</span>
+                    <span style={{ color: 'white', fontWeight: '500' }}>{productTypeFilter}</span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <span style={{ color: 'var(--text-secondary)' }}>Cliente:</span>
+                    <span style={{ color: 'white', fontWeight: '500' }}>{clientFilter}</span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <span style={{ color: 'var(--text-secondary)' }}>Estatus:</span>
+                    <span style={{ color: 'white', fontWeight: '500' }}>{statusFilter}</span>
+                  </div>
+                  {searchQuery && (
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <span style={{ color: 'var(--text-secondary)' }}>Búsqueda activa:</span>
+                      <span style={{ color: 'white', fontWeight: '500' }}>"{searchQuery}"</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', marginBottom: '24px' }}>
+                {/* Rango de Fechas */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-secondary)', marginBottom: '6px', fontWeight: '600' }}>DESDE</label>
+                    <input 
+                      type="date" 
+                      value={pdfStartDate}
+                      onChange={e => setPdfStartDate(e.target.value)}
+                      style={{
+                        width: '100%', padding: '10px', borderRadius: '10px',
+                        background: 'var(--bg-primary)', border: '1px solid var(--glass-border)',
+                        color: 'white', fontFamily: 'inherit', fontSize: '0.85rem'
+                      }}
+                    />
+                  </div>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-secondary)', marginBottom: '6px', fontWeight: '600' }}>HASTA</label>
+                    <input 
+                      type="date" 
+                      value={pdfEndDate}
+                      onChange={e => setPdfEndDate(e.target.value)}
+                      style={{
+                        width: '100%', padding: '10px', borderRadius: '10px',
+                        background: 'var(--bg-primary)', border: '1px solid var(--glass-border)',
+                        color: 'white', fontFamily: 'inherit', fontSize: '0.85rem'
+                      }}
+                    />
+                  </div>
+                </div>
+
+                {/* Filtro Producto */}
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-secondary)', marginBottom: '6px', fontWeight: '600' }}>LÍNEA DE PRODUCTO</label>
+                  <select
+                    value={pdfProductType}
+                    onChange={e => setPdfProductType(e.target.value)}
+                    style={{
+                      width: '100%', padding: '10px', borderRadius: '10px',
+                      background: 'var(--bg-primary)', border: '1px solid var(--glass-border)',
+                      color: 'white', fontFamily: 'inherit', fontSize: '0.85rem'
+                    }}
+                  >
+                    <option value="Todos">Todos los Productos</option>
+                    {productTypesList.map(pt => (
+                      <option key={pt.id} value={pt.name}>{pt.name}</option>
+                    ))}
+                    {productTypesList.length === 0 && (
+                      <>
+                        <option value="Tripolifosfato">Tripolifosfato</option>
+                        <option value="Ácido Fosfórico">Ácido Fosfórico</option>
+                        <option value="Pirofosfato">Pirofosfato</option>
+                        <option value="Otros">Otros</option>
+                      </>
+                    )}
+                  </select>
+                </div>
+
+                {/* Filtro Cliente */}
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-secondary)', marginBottom: '6px', fontWeight: '600' }}>CLIENTE CORPORATIVO</label>
+                  <select
+                    value={pdfClient}
+                    onChange={e => setPdfClient(e.target.value)}
+                    style={{
+                      width: '100%', padding: '10px', borderRadius: '10px',
+                      background: 'var(--bg-primary)', border: '1px solid var(--glass-border)',
+                      color: 'white', fontFamily: 'inherit', fontSize: '0.85rem'
+                    }}
+                  >
+                    <option value="Todos">Todos los Clientes</option>
+                    {uniqueClients.map(client => (
+                      <option key={client} value={client}>{client}</option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Filtro Estatus */}
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-secondary)', marginBottom: '6px', fontWeight: '600' }}>ESTATUS DE DESPACHO</label>
+                  <select
+                    value={pdfStatus}
+                    onChange={e => setPdfStatus(e.target.value)}
+                    style={{
+                      width: '100%', padding: '10px', borderRadius: '10px',
+                      background: 'var(--bg-primary)', border: '1px solid var(--glass-border)',
+                      color: 'white', fontFamily: 'inherit', fontSize: '0.85rem'
+                    }}
+                  >
+                    <option value="Todos">Todos los Estados</option>
+                    <option value="Despachado">Despachado</option>
+                    <option value="En Ruta">En Ruta</option>
+                    <option value="Entregado">Entregado</option>
+                    <option value="Anulado">Anulado</option>
+                  </select>
+                </div>
+              </div>
+            )}
+
+            <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
+              <button
+                onClick={() => setShowExportModal(false)}
+                style={{
+                  background: 'rgba(255,255,255,0.05)', border: '1px solid var(--glass-border)', color: 'var(--text-secondary)',
+                  padding: '10px 20px', borderRadius: '12px', cursor: 'pointer', fontWeight: '600', fontSize: '0.85rem'
+                }}
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={handleExecutePDFExport}
+                style={{
+                  background: 'var(--accent-gradient)', border: 'none', color: 'white',
+                  padding: '10px 24px', borderRadius: '12px', cursor: 'pointer', fontWeight: '700', fontSize: '0.85rem',
+                  boxShadow: '0 8px 20px rgba(99, 102, 241, 0.2)', display: 'flex', alignItems: 'center', gap: '6px'
+                }}
+              >
+                <Download size={16} /> Generar PDF
               </button>
             </div>
           </div>

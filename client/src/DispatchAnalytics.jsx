@@ -3,6 +3,18 @@ import { useNavigate } from 'react-router-dom';
 import { API_BASE_URL } from './config';
 import { ArrowLeft, TrendingUp, MapPin, Package, Users, Calendar, BarChart3, Award } from 'lucide-react';
 
+// Helper to calculate the current month range
+const getMonthRange = () => {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const lastDay = new Date(year, now.getMonth() + 1, 0).getDate();
+    return {
+        start: `${year}-${month}-01`,
+        end: `${year}-${month}-${String(lastDay).padStart(2, '0')}`
+    };
+};
+
 export default function DispatchAnalytics() {
     const navigate = useNavigate();
     const [analyticsData, setAnalyticsData] = useState(null);
@@ -10,15 +22,31 @@ export default function DispatchAnalytics() {
     const [error, setError] = useState(null);
     const [activeTab, setActiveTab] = useState('states'); // 'states' | 'products' | 'months' | 'clients'
 
+    // Initialize with current calendar month
+    const defaultRange = getMonthRange();
+    const [startDate, setStartDate] = useState(defaultRange.start);
+    const [endDate, setEndDate] = useState(defaultRange.end);
+
     useEffect(() => {
         const fetchAnalytics = async () => {
+            setLoading(true);
             try {
-                const res = await fetch(`${API_BASE_URL}/api/dispatches/analytics`);
+                let url = `${API_BASE_URL}/api/dispatches/analytics`;
+                const params = [];
+                if (startDate) params.push(`startDate=${startDate}`);
+                if (endDate) params.push(`endDate=${endDate}`);
+                
+                if (params.length > 0) {
+                    url += `?${params.join('&')}`;
+                }
+
+                const res = await fetch(url);
                 if (res.ok) {
                     const data = await res.json();
                     setAnalyticsData(data);
+                    setError(null);
                 } else {
-                    setError('Error al cargar analíticas desde la caché del servidor');
+                    setError('Error al calcular analíticas para el período seleccionado');
                 }
             } catch (err) {
                 setError('Error de conexión con el backend');
@@ -27,13 +55,16 @@ export default function DispatchAnalytics() {
             }
         };
         fetchAnalytics();
-    }, []);
+    }, [startDate, endDate]);
 
-    if (loading) return <div style={{ padding: '40px', color: 'var(--text-secondary)', textAlign: 'center' }}>Cargando analíticas desde caché...</div>;
-    if (error) return <div style={{ padding: '40px', color: '#f87171', textAlign: 'center' }}>{error}</div>;
-    if (!analyticsData) return <div style={{ padding: '40px', color: 'var(--text-secondary)', textAlign: 'center' }}>No hay información analítica disponible.</div>;
-
-    const { totalQuantity, destinationsArray, productsArray, monthsArray, clientsArray, cachedAt } = analyticsData;
+    const { 
+        totalQuantity = 0, 
+        destinationsArray = [], 
+        productsArray = [], 
+        monthsArray = [], 
+        clientsArray = [], 
+        cachedAt = null 
+    } = analyticsData || {};
 
     const productColors = {
         'Tripolifosfato': '#3b82f6',
@@ -44,9 +75,12 @@ export default function DispatchAnalytics() {
 
     const defaultColorPalette = ['#3b82f6', '#10b981', '#8b5cf6', '#06b6d4', '#f59e0b', '#ec4899', '#6366f1'];
 
+    // Safe protection to check if we have data inside our arrays
+    const hasData = totalQuantity > 0 && (destinationsArray.length > 0 || productsArray.length > 0);
+
     return (
         <div style={{ zIndex: 1, position: 'relative' }}>
-            <div className="page-header" style={{ display: 'flex', alignItems: 'center', gap: '16px', marginBottom: '32px' }}>
+            <div className="page-header" style={{ display: 'flex', alignItems: 'center', gap: '16px', marginBottom: '24px' }}>
                 <button 
                     onClick={() => navigate('/dispatches')}
                     style={{ background: 'transparent', border: '1px solid var(--glass-border)', color: 'white', borderRadius: '10px', width: '40px', height: '40px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', transition: 'background 0.2s' }}
@@ -61,13 +95,135 @@ export default function DispatchAnalytics() {
                             <TrendingUp size={24} color="var(--accent-primary)" />
                             Analítica de Despachos
                         </h1>
-                        {cachedAt && (
+                        {cachedAt ? (
                             <span style={{ fontSize: '0.75rem', background: 'rgba(16, 185, 129, 0.15)', color: 'var(--success)', padding: '4px 10px', borderRadius: '8px', fontWeight: '700', border: '1px solid rgba(16, 185, 129, 0.3)' }}>
                                 ⚡ Caché Activa ({new Date(cachedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })})
+                            </span>
+                        ) : (
+                            <span style={{ fontSize: '0.75rem', background: 'rgba(59, 130, 246, 0.15)', color: '#60a5fa', padding: '4px 10px', borderRadius: '8px', fontWeight: '700', border: '1px solid rgba(59, 130, 246, 0.3)' }}>
+                                📊 Filtrado Activo
                             </span>
                         )}
                     </div>
                     <p style={{ margin: '4px 0 0 0', color: 'var(--text-secondary)', fontSize: '0.9rem' }}>Auditoría visual corporativa e indicadores clave de rendimiento en tiempo real</p>
+                </div>
+            </div>
+
+            {/* BARRA DE FILTRO POR FECHA GLASSMORPHIC */}
+            <div style={{
+                background: 'var(--glass-bg)',
+                border: '1px solid var(--glass-border)',
+                borderRadius: '20px',
+                padding: '16px 20px',
+                marginBottom: '28px',
+                backdropFilter: 'blur(16px)',
+                boxShadow: '0 8px 32px rgba(0, 0, 0, 0.08)',
+                display: 'flex',
+                flexWrap: 'wrap',
+                gap: '16px',
+                alignItems: 'center',
+                justifyContent: 'space-between'
+            }}>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '16px', alignItems: 'center' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                        <span style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', fontWeight: '600' }}>Filtrar período:</span>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                        <input 
+                            type="date" 
+                            value={startDate} 
+                            onChange={(e) => setStartDate(e.target.value)}
+                            style={{
+                                background: 'rgba(255,255,255,0.03)',
+                                border: '1px solid var(--glass-border)',
+                                borderRadius: '12px',
+                                color: 'white',
+                                padding: '8px 12px',
+                                fontSize: '0.85rem',
+                                outline: 'none',
+                                transition: 'all 0.2s',
+                                cursor: 'pointer'
+                            }}
+                        />
+                        <span style={{ color: 'var(--text-secondary)', fontSize: '0.85rem' }}>al</span>
+                        <input 
+                            type="date" 
+                            value={endDate} 
+                            onChange={(e) => setEndDate(e.target.value)}
+                            style={{
+                                background: 'rgba(255,255,255,0.03)',
+                                border: '1px solid var(--glass-border)',
+                                borderRadius: '12px',
+                                color: 'white',
+                                padding: '8px 12px',
+                                fontSize: '0.85rem',
+                                outline: 'none',
+                                transition: 'all 0.2s',
+                                cursor: 'pointer'
+                            }}
+                        />
+                    </div>
+                </div>
+
+                <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', alignItems: 'center' }}>
+                    <button
+                        onClick={() => {
+                            const range = getMonthRange();
+                            setStartDate(range.start);
+                            setEndDate(range.end);
+                        }}
+                        style={{
+                            background: 'rgba(59, 130, 246, 0.1)',
+                            border: '1px solid rgba(59, 130, 246, 0.2)',
+                            color: '#60a5fa',
+                            borderRadius: '12px',
+                            padding: '8px 16px',
+                            fontSize: '0.85rem',
+                            fontWeight: '700',
+                            cursor: 'pointer',
+                            transition: 'all 0.2s',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '6px'
+                        }}
+                        onMouseOver={(e) => {
+                            e.currentTarget.style.background = 'rgba(59, 130, 246, 0.2)';
+                        }}
+                        onMouseOut={(e) => {
+                            e.currentTarget.style.background = 'rgba(59, 130, 246, 0.1)';
+                        }}
+                    >
+                        <Calendar size={14} />
+                        Mes Actual
+                    </button>
+
+                    <button
+                        onClick={() => {
+                            setStartDate('');
+                            setEndDate('');
+                        }}
+                        style={{
+                            background: 'rgba(255, 255, 255, 0.03)',
+                            border: '1px solid var(--glass-border)',
+                            color: 'var(--text-secondary)',
+                            borderRadius: '12px',
+                            padding: '8px 16px',
+                            fontSize: '0.85rem',
+                            fontWeight: '700',
+                            cursor: 'pointer',
+                            transition: 'all 0.2s'
+                        }}
+                        onMouseOver={(e) => {
+                            e.currentTarget.style.background = 'rgba(255, 255, 255, 0.08)';
+                            e.currentTarget.style.color = 'white';
+                        }}
+                        onMouseOut={(e) => {
+                            e.currentTarget.style.background = 'rgba(255, 255, 255, 0.03)';
+                            e.currentTarget.style.color = 'var(--text-secondary)';
+                        }}
+                    >
+                        Ver Todo
+                    </button>
                 </div>
             </div>
 
@@ -147,234 +303,303 @@ export default function DispatchAnalytics() {
                 </button>
             </div>
 
-            {/* CONTENIDO 1: ESTADOS */}
-            {activeTab === 'states' && (
-                <div className="card" style={{ padding: '32px' }}>
-                    <h3 style={{ fontSize: '1.1rem', fontWeight: '600', marginBottom: '32px', color: 'white', display: 'flex', alignItems: 'center', gap: '10px' }}>
-                        <MapPin size={22} color="#10b981" /> Distribución Geográfica (TM por Estado Destino)
-                    </h3>
-                    
-                    {destinationsArray.length === 0 ? (
-                        <div style={{ padding: '40px', textAlign: 'center', color: 'var(--text-secondary)' }}>No hay datos geográficos para mostrar.</div>
-                    ) : (
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-                            {destinationsArray.map((dest, idx) => {
-                                const maxVal = Math.max(...destinationsArray.map(c => c.value), 1);
-                                const percent = (dest.value / maxVal) * 100;
-                                const totalPercent = totalQuantity > 0 ? ((dest.value / totalQuantity) * 100).toFixed(1) : 0;
+            {/* TAB CONTENT PANEL - persistent loading & error */}
+            {loading ? (
+                <div style={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    padding: '80px 40px',
+                    background: 'var(--glass-bg)',
+                    border: '1px solid var(--glass-border)',
+                    borderRadius: '20px',
+                    gap: '16px'
+                }}>
+                    <div className="spinner" style={{
+                        width: '40px',
+                        height: '40px',
+                        border: '3px solid rgba(255,255,255,0.05)',
+                        borderTopColor: 'var(--accent-primary)',
+                        borderRadius: '50%',
+                        animation: 'spin 1s linear infinite'
+                    }} />
+                    <span style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', fontWeight: '500' }}>
+                        Calculando métricas del período...
+                    </span>
+                    <style>{`
+                        @keyframes spin {
+                            to { transform: rotate(360deg); }
+                        }
+                    `}</style>
+                </div>
+            ) : error ? (
+                <div style={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    padding: '60px 40px',
+                    background: 'var(--glass-bg)',
+                    border: '1px solid var(--glass-border)',
+                    borderRadius: '20px',
+                    color: '#f87171',
+                    gap: '8px'
+                }}>
+                    <span style={{ fontWeight: '700' }}>Ocurrió un error</span>
+                    <span style={{ fontSize: '0.9rem', opacity: 0.8 }}>{error}</span>
+                </div>
+            ) : !hasData ? (
+                <div style={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    padding: '80px 40px',
+                    background: 'var(--glass-bg)',
+                    border: '1px solid var(--glass-border)',
+                    borderRadius: '20px',
+                    color: 'var(--text-secondary)',
+                    gap: '16px'
+                }}>
+                    <Calendar size={48} style={{ opacity: 0.4 }} />
+                    <span style={{ fontWeight: '700', color: 'white', fontSize: '1.1rem' }}>No hay registros para este período</span>
+                    <span style={{ fontSize: '0.9rem', textAlign: 'center', maxWidth: '360px' }}>
+                        No se encontraron despachos en el rango seleccionado. Intenta seleccionando otro período.
+                    </span>
+                </div>
+            ) : (
+                <>
+                    {/* CONTENIDO 1: ESTADOS */}
+                    {activeTab === 'states' && (
+                        <div className="card" style={{ padding: '32px' }}>
+                            <h3 style={{ fontSize: '1.1rem', fontWeight: '600', marginBottom: '32px', color: 'white', display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                <MapPin size={22} color="#10b981" /> Distribución Geográfica (TM por Estado Destino)
+                            </h3>
+                            
+                            {destinationsArray.length === 0 ? (
+                                <div style={{ padding: '40px', textAlign: 'center', color: 'var(--text-secondary)' }}>No hay datos geográficos para mostrar.</div>
+                            ) : (
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                                    {destinationsArray.map((dest, idx) => {
+                                        const maxVal = destinationsArray.length > 0 ? Math.max(...destinationsArray.map(c => c.value), 1) : 1;
+                                        const percent = (dest.value / maxVal) * 100;
+                                        const totalPercent = totalQuantity > 0 ? ((dest.value / totalQuantity) * 100).toFixed(1) : '0.0';
 
-                                return (
-                                    <div key={dest.name} style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.9rem' }}>
-                                            <span style={{ fontWeight: '600', color: 'white', display: 'flex', alignItems: 'center', gap: '10px' }}>
-                                                <span style={{ color: 'var(--text-secondary)', fontSize: '0.8rem', width: '24px' }}>{idx + 1}.</span> {dest.name}
-                                            </span>
-                                            <div style={{ display: 'flex', gap: '16px', alignItems: 'center' }}>
-                                                <span style={{ color: 'var(--text-secondary)', fontSize: '0.8rem' }}>{totalPercent}% del total</span>
-                                                <span style={{ color: '#10b981', fontWeight: '700', fontSize: '0.95rem' }}>{dest.value.toFixed(2)} tm</span>
+                                        return (
+                                            <div key={dest.name} style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                                                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.9rem' }}>
+                                                    <span style={{ fontWeight: '600', color: 'white', display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                                        <span style={{ color: 'var(--text-secondary)', fontSize: '0.8rem', width: '24px' }}>{idx + 1}.</span> {dest.name}
+                                                    </span>
+                                                    <div style={{ display: 'flex', gap: '16px', alignItems: 'center' }}>
+                                                        <span style={{ color: 'var(--text-secondary)', fontSize: '0.8rem' }}>{totalPercent}% del total</span>
+                                                        <span style={{ color: '#10b981', fontWeight: '700', fontSize: '0.95rem' }}>{dest.value.toFixed(2)} tm</span>
+                                                    </div>
+                                                </div>
+                                                <div style={{ width: '100%', height: '14px', background: 'rgba(255,255,255,0.05)', borderRadius: '7px', overflow: 'hidden' }}>
+                                                    <div 
+                                                        style={{ 
+                                                            width: `${percent}%`, 
+                                                            height: '100%', 
+                                                            background: 'linear-gradient(90deg, #10b981 0%, #059669 100%)', 
+                                                            borderRadius: '7px',
+                                                            transition: 'width 0.5s ease-out'
+                                                        }} 
+                                                    />
+                                                </div>
                                             </div>
-                                        </div>
-                                        <div style={{ width: '100%', height: '14px', background: 'rgba(255,255,255,0.05)', borderRadius: '7px', overflow: 'hidden' }}>
-                                            <div 
-                                                style={{ 
-                                                    width: `${percent}%`, 
-                                                    height: '100%', 
-                                                    background: 'linear-gradient(90deg, #10b981 0%, #059669 100%)', 
-                                                    borderRadius: '7px',
-                                                    transition: 'width 0.5s ease-out'
-                                                }} 
-                                            />
-                                        </div>
-                                    </div>
-                                );
-                            })}
+                                        );
+                                    })}
+                                </div>
+                            )}
                         </div>
                     )}
-                </div>
-            )}
 
-            {/* CONTENIDO 2: PRODUCTOS */}
-            {activeTab === 'products' && (
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(400px, 1fr))', gap: '24px' }}>
-                    <div className="card" style={{ padding: '32px' }}>
-                        <h3 style={{ fontSize: '1.1rem', fontWeight: '600', marginBottom: '28px', color: 'white', display: 'flex', alignItems: 'center', gap: '10px' }}>
-                            <Package size={22} color="#f59e0b" /> Participación Global por Producto
-                        </h3>
-                        {productsArray.length === 0 ? (
-                            <div style={{ height: '220px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-secondary)' }}>
-                                Sin datos para distribuir
+                    {/* CONTENIDO 2: PRODUCTOS */}
+                    {activeTab === 'products' && (
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(400px, 1fr))', gap: '24px' }}>
+                            <div className="card" style={{ padding: '32px' }}>
+                                <h3 style={{ fontSize: '1.1rem', fontWeight: '600', marginBottom: '28px', color: 'white', display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                    <Package size={22} color="#f59e0b" /> Participación Global por Producto
+                                </h3>
+                                {productsArray.length === 0 ? (
+                                    <div style={{ height: '220px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-secondary)' }}>
+                                        Sin datos para distribuir
+                                    </div>
+                                ) : (
+                                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-around', height: '220px' }}>
+                                        <svg width="180" height="180" viewBox="0 0 36 36">
+                                            <circle cx="18" cy="18" r="15.915" fill="none" stroke="rgba(255,255,255,0.05)" strokeWidth="3" />
+                                            {(() => {
+                                                let accumulatedPercent = 0;
+                                                return productsArray.map((item, idx) => {
+                                                    const percent = totalQuantity > 0 ? (item.value / totalQuantity) * 100 : 0;
+                                                    const strokeDasharray = `${percent} ${100 - percent}`;
+                                                    const strokeDashoffset = 100 - accumulatedPercent + 25; 
+                                                    accumulatedPercent += percent;
+                                                    const color = productColors[item.name] || defaultColorPalette[idx % defaultColorPalette.length];
+                                                    return (
+                                                        <circle 
+                                                            key={item.name}
+                                                            cx="18" cy="18" r="15.915" fill="none" 
+                                                            stroke={color} 
+                                                            strokeWidth="3.5" strokeDasharray={strokeDasharray} strokeDashoffset={strokeDashoffset} 
+                                                        />
+                                                    );
+                                                });
+                                            })()}
+                                            <g transform="translate(18, 18)">
+                                                <text x="0" y="-1" fill="white" fontSize="4.5" fontWeight="bold" textAnchor="middle">
+                                                    {totalQuantity.toFixed(2)}
+                                                </text>
+                                                <text x="0" y="4" fill="var(--text-secondary)" fontSize="2.5" textAnchor="middle">
+                                                    TM Totales
+                                                </text>
+                                            </g>
+                                        </svg>
+                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                                            {productsArray.map((item, idx) => {
+                                                const percent = totalQuantity > 0 ? (item.value / totalQuantity) * 100 : 0;
+                                                const color = productColors[item.name] || defaultColorPalette[idx % defaultColorPalette.length];
+                                                return (
+                                                    <div key={item.name} style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                                                        <span style={{ width: '14px', height: '14px', borderRadius: '4px', background: color }}></span>
+                                                        <div style={{ fontSize: '0.9rem' }}>
+                                                            <span style={{ fontWeight: '600', color: 'white', display: 'block' }}>{item.name}</span>
+                                                            <span style={{ color: 'var(--text-secondary)', fontSize: '0.8rem' }}>
+                                                                {percent.toFixed(1)}% ({item.value.toFixed(2)} tm)
+                                                            </span>
+                                                        </div>
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    </div>
+                                )}
                             </div>
-                        ) : (
-                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-around', height: '220px' }}>
-                                <svg width="180" height="180" viewBox="0 0 36 36">
-                                    <circle cx="18" cy="18" r="15.915" fill="none" stroke="rgba(255,255,255,0.05)" strokeWidth="3" />
-                                    {(() => {
-                                        let accumulatedPercent = 0;
-                                        return productsArray.map((item, idx) => {
-                                            const percent = (item.value / totalQuantity) * 100;
-                                            const strokeDasharray = `${percent} ${100 - percent}`;
-                                            const strokeDashoffset = 100 - accumulatedPercent + 25; 
-                                            accumulatedPercent += percent;
-                                            const color = productColors[item.name] || defaultColorPalette[idx % defaultColorPalette.length];
-                                            return (
-                                                <circle 
-                                                    key={item.name}
-                                                    cx="18" cy="18" r="15.915" fill="none" 
-                                                    stroke={color} 
-                                                    strokeWidth="3.5" strokeDasharray={strokeDasharray} strokeDashoffset={strokeDashoffset} 
-                                                />
-                                            );
-                                        });
-                                    })()}
-                                    <g transform="translate(18, 18)">
-                                        <text x="0" y="-1" fill="white" fontSize="4.5" fontWeight="bold" textAnchor="middle">
-                                            {totalQuantity.toFixed(2)}
-                                        </text>
-                                        <text x="0" y="4" fill="var(--text-secondary)" fontSize="2.5" textAnchor="middle">
-                                            TM Totales
-                                        </text>
-                                    </g>
-                                </svg>
-                                <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-                                    {productsArray.map((item, idx) => {
-                                        const percent = (item.value / totalQuantity) * 100;
-                                        const color = productColors[item.name] || defaultColorPalette[idx % defaultColorPalette.length];
+
+                            <div className="card" style={{ padding: '32px' }}>
+                                <h3 style={{ fontSize: '1.1rem', fontWeight: '600', marginBottom: '28px', color: 'white', display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                    <BarChart3 size={22} color="#3b82f6" /> Ranking de Volumen por Producto
+                                </h3>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                                    {productsArray.map((prod, idx) => {
+                                        const maxVal = productsArray.length > 0 ? Math.max(...productsArray.map(p => p.value), 1) : 1;
+                                        const percent = (prod.value / maxVal) * 100;
+                                        const color = productColors[prod.name] || defaultColorPalette[idx % defaultColorPalette.length];
+
                                         return (
-                                            <div key={item.name} style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                                                <span style={{ width: '14px', height: '14px', borderRadius: '4px', background: color }}></span>
-                                                <div style={{ fontSize: '0.9rem' }}>
-                                                    <span style={{ fontWeight: '600', color: 'white', display: 'block' }}>{item.name}</span>
-                                                    <span style={{ color: 'var(--text-secondary)', fontSize: '0.8rem' }}>
-                                                        {percent.toFixed(1)}% ({item.value.toFixed(2)} tm)
-                                                    </span>
+                                            <div key={prod.name} style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                                                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.9rem' }}>
+                                                    <span style={{ fontWeight: '600', color: 'white' }}>{idx + 1}. {prod.name}</span>
+                                                    <span style={{ color: color, fontWeight: '700' }}>{prod.value.toFixed(2)} tm</span>
+                                                </div>
+                                                <div style={{ width: '100%', height: '12px', background: 'rgba(255,255,255,0.05)', borderRadius: '6px', overflow: 'hidden' }}>
+                                                    <div style={{ width: `${percent}%`, height: '100%', background: color, borderRadius: '6px', transition: 'width 0.5s ease-out' }} />
                                                 </div>
                                             </div>
                                         );
                                     })}
                                 </div>
                             </div>
-                        )}
-                    </div>
-
-                    <div className="card" style={{ padding: '32px' }}>
-                        <h3 style={{ fontSize: '1.1rem', fontWeight: '600', marginBottom: '28px', color: 'white', display: 'flex', alignItems: 'center', gap: '10px' }}>
-                            <BarChart3 size={22} color="#3b82f6" /> Ranking de Volumen por Producto
-                        </h3>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-                            {productsArray.map((prod, idx) => {
-                                const maxVal = Math.max(...productsArray.map(p => p.value), 1);
-                                const percent = (prod.value / maxVal) * 100;
-                                const color = productColors[prod.name] || defaultColorPalette[idx % defaultColorPalette.length];
-
-                                return (
-                                    <div key={prod.name} style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.9rem' }}>
-                                            <span style={{ fontWeight: '600', color: 'white' }}>{idx + 1}. {prod.name}</span>
-                                            <span style={{ color: color, fontWeight: '700' }}>{prod.value.toFixed(2)} tm</span>
-                                        </div>
-                                        <div style={{ width: '100%', height: '12px', background: 'rgba(255,255,255,0.05)', borderRadius: '6px', overflow: 'hidden' }}>
-                                            <div style={{ width: `${percent}%`, height: '100%', background: color, borderRadius: '6px', transition: 'width 0.5s ease-out' }} />
-                                        </div>
-                                    </div>
-                                );
-                            })}
-                        </div>
-                    </div>
-                </div>
-            )}
-
-            {/* CONTENIDO 3: MESES */}
-            {activeTab === 'months' && (
-                <div className="card" style={{ padding: '32px' }}>
-                    <h3 style={{ fontSize: '1.1rem', fontWeight: '600', marginBottom: '32px', color: 'white', display: 'flex', alignItems: 'center', gap: '10px' }}>
-                        <Calendar size={22} color="#4f46e5" /> Evolución de Ventas Mensuales (TM)
-                    </h3>
-                    
-                    {monthsArray.length === 0 ? (
-                        <div style={{ padding: '40px', textAlign: 'center', color: 'var(--text-secondary)' }}>No hay datos mensuales para graficar.</div>
-                    ) : (
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '22px' }}>
-                            {monthsArray.map((m) => {
-                                const maxVal = Math.max(...monthsArray.map(x => x.value), 1);
-                                const percent = (m.value / maxVal) * 100;
-                                const totalPercent = totalQuantity > 0 ? ((m.value / totalQuantity) * 100).toFixed(1) : 0;
-
-                                return (
-                                    <div key={m.rawKey} style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.9rem' }}>
-                                            <span style={{ fontWeight: '600', color: 'white', display: 'flex', alignItems: 'center', gap: '10px' }}>
-                                                <Calendar size={16} color="#818cf8" /> {m.name}
-                                            </span>
-                                            <div style={{ display: 'flex', gap: '16px', alignItems: 'center' }}>
-                                                <span style={{ color: 'var(--text-secondary)', fontSize: '0.8rem' }}>{totalPercent}% del total anual</span>
-                                                <span style={{ color: '#818cf8', fontWeight: '700', fontSize: '0.95rem' }}>{m.value.toFixed(2)} tm</span>
-                                            </div>
-                                        </div>
-                                        <div style={{ width: '100%', height: '16px', background: 'rgba(255,255,255,0.05)', borderRadius: '8px', overflow: 'hidden' }}>
-                                            <div 
-                                                style={{ 
-                                                    width: `${percent}%`, 
-                                                    height: '100%', 
-                                                    background: 'linear-gradient(90deg, #4f46e5 0%, #6366f1 100%)', 
-                                                    borderRadius: '8px',
-                                                    transition: 'width 0.5s ease-out'
-                                                }} 
-                                            />
-                                        </div>
-                                    </div>
-                                );
-                            })}
                         </div>
                     )}
-                </div>
-            )}
 
-            {/* CONTENIDO 4: CLIENTES */}
-            {activeTab === 'clients' && (
-                <div className="card" style={{ padding: '32px' }}>
-                    <h3 style={{ fontSize: '1.1rem', fontWeight: '600', marginBottom: '32px', color: 'white', display: 'flex', alignItems: 'center', gap: '10px' }}>
-                        <Users size={22} color="#3b82f6" /> Top Clientes por Volumen de Despacho (TM)
-                    </h3>
-                    
-                    {clientsArray.length === 0 ? (
-                        <div style={{ padding: '40px', textAlign: 'center', color: 'var(--text-secondary)' }}>No hay datos de clientes registrados.</div>
-                    ) : (
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-                            {clientsArray.slice(0, 15).map((client, idx) => {
-                                const maxVal = Math.max(...clientsArray.map(c => c.value), 1);
-                                const percent = (client.value / maxVal) * 100;
-                                const totalPercent = totalQuantity > 0 ? ((client.value / totalQuantity) * 100).toFixed(1) : 0;
-                                const isTop3 = idx < 3;
+                    {/* CONTENIDO 3: MESES */}
+                    {activeTab === 'months' && (
+                        <div className="card" style={{ padding: '32px' }}>
+                            <h3 style={{ fontSize: '1.1rem', fontWeight: '600', marginBottom: '32px', color: 'white', display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                <Calendar size={22} color="#4f46e5" /> Evolución de Ventas Mensuales (TM)
+                            </h3>
+                            
+                            {monthsArray.length === 0 ? (
+                                <div style={{ padding: '40px', textAlign: 'center', color: 'var(--text-secondary)' }}>No hay datos mensuales para graficar.</div>
+                            ) : (
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '22px' }}>
+                                    {monthsArray.map((m) => {
+                                        const maxVal = monthsArray.length > 0 ? Math.max(...monthsArray.map(x => x.value), 1) : 1;
+                                        const percent = (m.value / maxVal) * 100;
+                                        const totalPercent = totalQuantity > 0 ? ((m.value / totalQuantity) * 100).toFixed(1) : '0.0';
 
-                                return (
-                                    <div key={client.name} style={{ display: 'flex', flexDirection: 'column', gap: '8px', padding: '12px', borderRadius: '12px', background: isTop3 ? 'rgba(59, 130, 246, 0.08)' : 'transparent', border: isTop3 ? '1px solid rgba(59, 130, 246, 0.2)' : 'none' }}>
-                                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.9rem', alignItems: 'center' }}>
-                                            <span style={{ fontWeight: isTop3 ? '700' : '600', color: 'white', display: 'flex', alignItems: 'center', gap: '10px' }}>
-                                                {isTop3 ? <Award size={18} color="#f59e0b" /> : <span style={{ color: 'var(--text-secondary)', fontSize: '0.8rem', width: '18px' }}>{idx + 1}.</span>}
-                                                {client.name}
-                                            </span>
-                                            <div style={{ display: 'flex', gap: '16px', alignItems: 'center' }}>
-                                                <span style={{ color: 'var(--text-secondary)', fontSize: '0.8rem' }}>{totalPercent}% del total</span>
-                                                <span style={{ color: isTop3 ? '#3b82f6' : '#818cf8', fontWeight: '700', fontSize: '0.95rem' }}>{client.value.toFixed(2)} tm</span>
+                                        return (
+                                            <div key={m.rawKey} style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                                                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.9rem' }}>
+                                                    <span style={{ fontWeight: '600', color: 'white', display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                                        <Calendar size={16} color="#818cf8" /> {m.name}
+                                                    </span>
+                                                    <div style={{ display: 'flex', gap: '16px', alignItems: 'center' }}>
+                                                        <span style={{ color: 'var(--text-secondary)', fontSize: '0.8rem' }}>{totalPercent}% del total anual</span>
+                                                        <span style={{ color: '#818cf8', fontWeight: '700', fontSize: '0.95rem' }}>{m.value.toFixed(2)} tm</span>
+                                                    </div>
+                                                </div>
+                                                <div style={{ width: '100%', height: '16px', background: 'rgba(255,255,255,0.05)', borderRadius: '8px', overflow: 'hidden' }}>
+                                                    <div 
+                                                        style={{ 
+                                                            width: `${percent}%`, 
+                                                            height: '100%', 
+                                                            background: 'linear-gradient(90deg, #4f46e5 0%, #6366f1 100%)', 
+                                                            borderRadius: '8px',
+                                                            transition: 'width 0.5s ease-out'
+                                                        }} 
+                                                    />
+                                                </div>
                                             </div>
-                                        </div>
-                                        <div style={{ width: '100%', height: '12px', background: 'rgba(255,255,255,0.05)', borderRadius: '6px', overflow: 'hidden' }}>
-                                            <div 
-                                                style={{ 
-                                                    width: `${percent}%`, 
-                                                    height: '100%', 
-                                                    background: isTop3 ? 'linear-gradient(90deg, #2563eb 0%, #3b82f6 100%)' : 'linear-gradient(90deg, #6366f1 0%, #818cf8 100%)', 
-                                                    borderRadius: '6px',
-                                                    transition: 'width 0.5s ease-out'
-                                                }} 
-                                            />
-                                        </div>
-                                    </div>
-                                );
-                            })}
+                                        );
+                                    })}
+                                </div>
+                            )}
                         </div>
                     )}
-                </div>
+
+                    {/* CONTENIDO 4: CLIENTES */}
+                    {activeTab === 'clients' && (
+                        <div className="card" style={{ padding: '32px' }}>
+                            <h3 style={{ fontSize: '1.1rem', fontWeight: '600', marginBottom: '32px', color: 'white', display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                <Users size={22} color="#3b82f6" /> Top Clientes por Volumen de Despacho (TM)
+                            </h3>
+                            
+                            {clientsArray.length === 0 ? (
+                                <div style={{ padding: '40px', textAlign: 'center', color: 'var(--text-secondary)' }}>No hay datos de clientes registrados.</div>
+                            ) : (
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                                    {clientsArray.slice(0, 15).map((client, idx) => {
+                                        const maxVal = clientsArray.length > 0 ? Math.max(...clientsArray.map(c => c.value), 1) : 1;
+                                        const percent = (client.value / maxVal) * 100;
+                                        const totalPercent = totalQuantity > 0 ? ((client.value / totalQuantity) * 100).toFixed(1) : '0.0';
+                                        const isTop3 = idx < 3;
+
+                                        return (
+                                            <div key={client.name} style={{ display: 'flex', flexDirection: 'column', gap: '8px', padding: '12px', borderRadius: '12px', background: isTop3 ? 'rgba(59, 130, 246, 0.08)' : 'transparent', border: isTop3 ? '1px solid rgba(59, 130, 246, 0.2)' : 'none' }}>
+                                                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.9rem', alignItems: 'center' }}>
+                                                    <span style={{ fontWeight: isTop3 ? '700' : '600', color: 'white', display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                                        {isTop3 ? <Award size={18} color="#f59e0b" /> : <span style={{ color: 'var(--text-secondary)', fontSize: '0.8rem', width: '18px' }}>{idx + 1}.</span>}
+                                                        {client.name}
+                                                    </span>
+                                                    <div style={{ display: 'flex', gap: '16px', alignItems: 'center' }}>
+                                                        <span style={{ color: 'var(--text-secondary)', fontSize: '0.8rem' }}>{totalPercent}% del total</span>
+                                                        <span style={{ color: isTop3 ? '#3b82f6' : '#818cf8', fontWeight: '700', fontSize: '0.95rem' }}>{client.value.toFixed(2)} tm</span>
+                                                    </div>
+                                                </div>
+                                                <div style={{ width: '100%', height: '12px', background: 'rgba(255,255,255,0.05)', borderRadius: '6px', overflow: 'hidden' }}>
+                                                    <div 
+                                                        style={{ 
+                                                            width: `${percent}%`, 
+                                                            height: '100%', 
+                                                            background: isTop3 ? 'linear-gradient(90deg, #2563eb 0%, #3b82f6 100%)' : 'linear-gradient(90deg, #6366f1 0%, #818cf8 100%)', 
+                                                            borderRadius: '6px',
+                                                            transition: 'width 0.5s ease-out'
+                                                        }} 
+                                                    />
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            )}
+                        </div>
+                    )}
+                </>
             )}
         </div>
     );

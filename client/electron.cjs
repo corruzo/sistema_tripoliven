@@ -8,12 +8,6 @@ function createWindow() {
         height: 850,
         minWidth: 1024,
         minHeight: 768,
-        titleBarStyle: 'hidden',
-        titleBarOverlay: {
-            color: '#0f172a',
-            symbolColor: '#ffffff',
-            height: 44
-        },
         webPreferences: {
             nodeIntegration: false,
             contextIsolation: true,
@@ -29,20 +23,7 @@ function createWindow() {
 }
 
 ipcMain.on('set-theme', (event, theme) => {
-    const win = BrowserWindow.fromWebContents(event.sender);
-    if (win && win.setTitleBarOverlay) {
-        if (theme === 'light') {
-            win.setTitleBarOverlay({
-                color: '#f1f5f9', // Fondo gris hielo modo claro
-                symbolColor: '#0f172a' // Iconos oscuros
-            });
-        } else {
-            win.setTitleBarOverlay({
-                color: '#0f172a', // Fondo oscuro modo oscuro
-                symbolColor: '#ffffff' // Iconos blancos
-            });
-        }
-    }
+    // El sistema operativo gestiona el marco nativo de la ventana
 });
 
 app.whenReady().then(() => {

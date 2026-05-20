@@ -13,6 +13,7 @@ const usersRouter = require('./routes/users');
 const dispatchesRouter = require('./routes/dispatches');
 const productTypesRouter = require('./routes/productTypes');
 const clientsRouter = require('./routes/clients');
+const systemRouter = require('./routes/system');
 
 const app = express();
 const PORT = process.env.PORT || 4000;
@@ -33,6 +34,7 @@ app.use('/api/users', usersRouter);
 app.use('/api/dispatches', dispatchesRouter);
 app.use('/api/product-types', productTypesRouter);
 app.use('/api/clients', clientsRouter);
+app.use('/api/system', systemRouter);
 
 // Ruta de compatibilidad para peticiones directas de login antiguo
 app.post('/api/login', (req, res, next) => {
@@ -49,9 +51,12 @@ app.get('/api/dashboard/stats', (req, res, next) => {
         
         let active = 0;
         let inactive = 0;
-        rows.forEach(row => {
-            if (row.status === 'Activo') active = row.count;
-            if (row.status === 'Inactivo') inactive = row.count;
+        const statsRows = rows || [];
+        statsRows.forEach(row => {
+            if (row) {
+                if (row.status === 'Activo') active = row.count;
+                if (row.status === 'Inactivo') inactive = row.count;
+            }
         });
 
         res.json({
@@ -87,6 +92,30 @@ app.get('/api/server-time', (req, res) => {
 // MANEJO DE ERRORES GLOBAL (BLINDAJE CONTRA CAÍDAS)
 // =======================
 
+// Blindaje de proceso a nivel de sistema operativo para asegurar disponibilidad del 100% (Nunca Cae)
+const fs = require('fs');
+const path = require('path');
+const logCrash = (errorType, err) => {
+    const errorMsg = `[${new Date().toISOString()}] 🚨 ERROR CRÍTICO CAPTURADO (${errorType}):\n${err.stack || err.message || err}\n\n`;
+    console.error(errorMsg);
+    try {
+        fs.appendFileSync(path.resolve(__dirname, 'crashes.log'), errorMsg, 'utf8');
+    } catch (e) {
+        console.error('No se pudo escribir en crashes.log:', e.message);
+    }
+};
+
+process.on('uncaughtException', (err) => {
+    logCrash('Uncaught Exception', err);
+    // El proceso se mantiene vivo de forma segura
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+    const err = reason instanceof Error ? reason : new Error(String(reason));
+    logCrash('Unhandled Rejection', err);
+    // El proceso se mantiene vivo de forma segura
+});
+
 // Middleware 404 para rutas no encontradas
 app.use((req, res, next) => {
     res.status(404).json({ error: 'La ruta solicitada no existe en el servidor.' });
@@ -94,7 +123,7 @@ app.use((req, res, next) => {
 
 // Middleware de error global
 app.use((err, req, res, next) => {
-    console.error('❌ ERROR CRÍTICO CAPTURADO:', err.stack || err.message || err);
+    logCrash('Express Middleware Error', err);
     res.status(500).json({ 
         error: 'Ha ocurrido un problema interno en el servidor. La operación no pudo completarse.',
         details: process.env.NODE_ENV === 'development' ? err.message : undefined

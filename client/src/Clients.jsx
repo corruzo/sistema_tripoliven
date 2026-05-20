@@ -1,12 +1,42 @@
 import React, { useState, useEffect } from 'react';
 import { API_BASE_URL } from './config';
-import { Search, Plus, Edit, Trash2, X, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Search, Plus, Edit, Trash2, X, ChevronLeft, ChevronRight, Check, ShieldAlert } from 'lucide-react';
 
 const VENEZUELA_STATES = [
     'Amazonas', 'Anzoátegui', 'Apure', 'Aragua', 'Barinas', 'Bolívar', 'Carabobo', 'Cojedes', 
     'Delta Amacuro', 'Distrito Capital', 'Falcón', 'Guárico', 'Lara', 'Mérida', 'Miranda', 
     'Monagas', 'Nueva Esparta', 'Portuguesa', 'Sucre', 'Táchira', 'Trujillo', 'La Guaira', 'Yaracuy', 'Zulia'
 ];
+
+// Helper to format RIF on the fly to V-XXXXXXXX-X or J-XXXXXXXX-X
+const formatRIF = (value) => {
+    let clean = value.replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
+    if (clean.length === 0) return '';
+    
+    let letter = clean.charAt(0);
+    // Ensure the first character is G, J, E or V. Default to J if they directly type a number
+    if (!['G', 'J', 'E', 'V'].includes(letter)) {
+        if (/[0-9]/.test(letter)) {
+            letter = 'J';
+            clean = 'J' + clean;
+        } else {
+            return '';
+        }
+    }
+    
+    const numbers = clean.substring(1).substring(0, 9);
+    if (numbers.length === 0) {
+        return letter;
+    }
+    
+    if (numbers.length <= 8) {
+        return `${letter}-${numbers}`;
+    }
+    
+    const body = numbers.substring(0, 8);
+    const verify = numbers.substring(8, 9);
+    return `${letter}-${body}-${verify}`;
+};
 
 export default function Clients() {
     const [clients, setClients] = useState([]);
@@ -23,8 +53,8 @@ export default function Clients() {
 
     const filteredClients = clients.filter(c => 
         c.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
-        c.rif.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        c.state.toLowerCase().includes(searchTerm.toLowerCase())
+        (c.rif && !c.rif.startsWith('PENDIENTE-') && c.rif.toLowerCase().includes(searchTerm.toLowerCase())) ||
+        (c.state && c.state.toLowerCase().includes(searchTerm.toLowerCase()))
     );
 
     const totalPages = Math.ceil(filteredClients.length / itemsPerPage);
@@ -45,13 +75,17 @@ export default function Clients() {
     const fetchClients = async () => {
         try {
             setLoading(true);
+            setError(null);
             const res = await fetch(`${API_BASE_URL}/api/clients`);
-            if (res.ok) {
-                const data = await res.json();
-                setClients(data);
+            if (!res.ok) {
+                throw new Error(`El servidor respondió con código ${res.status}`);
             }
+            const data = await res.json();
+            setClients(data || []);
+            setError(null);
         } catch (err) {
-            setError('Error de conexión al cargar clientes.');
+            console.error('Error al cargar clientes:', err);
+            setError('No se pudo establecer conexión con el servidor. Mostrando catálogo incompleto o fuera de línea.');
         } finally {
             setLoading(false);
         }
@@ -62,8 +96,8 @@ export default function Clients() {
             setEditId(client.id);
             setFormData({
                 name: client.name,
-                rif: client.rif,
-                state: client.state,
+                rif: client.rif.startsWith('PENDIENTE-') ? '' : client.rif,
+                state: client.state === 'Sin Registrar' ? '' : client.state,
                 address: client.address || '',
                 phone: client.phone || '',
                 contact_person: client.contact_person || '',
@@ -78,6 +112,16 @@ export default function Clients() {
 
     const handleSave = async (e) => {
         e.preventDefault();
+
+        // Validar formato de RIF si el usuario introdujo uno
+        if (formData.rif) {
+            const rifPattern = /^[G|J|E|V]-\d{8}-\d$/;
+            if (!rifPattern.test(formData.rif)) {
+                alert('El RIF no es válido. Debe tener el formato correcto, ej: J-12345678-9, G-12345678-9, V-12345678-9 o E-12345678-9.');
+                return;
+            }
+        }
+
         const url = editId 
             ? `${API_BASE_URL}/api/clients/${editId}` 
             : `${API_BASE_URL}/api/clients`;
@@ -154,6 +198,29 @@ export default function Clients() {
                     </button>
                 </div>
 
+                {error && (
+                    <div style={{
+                        background: 'rgba(239, 68, 68, 0.08)',
+                        backdropFilter: 'blur(10px)',
+                        border: '1px solid rgba(239, 68, 68, 0.2)',
+                        borderRadius: '16px',
+                        padding: '16px 24px',
+                        marginBottom: '24px',
+                        color: '#fca5a5',
+                        fontSize: '0.9rem',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '14px',
+                        boxShadow: '0 8px 32px rgba(239, 68, 68, 0.05)',
+                        animation: 'fadeIn 0.3s ease-out'
+                    }}>
+                        <ShieldAlert size={22} style={{ color: '#f87171', flexShrink: 0 }} />
+                        <div>
+                            <strong style={{ color: '#ef4444', fontWeight: 600 }}>Alerta de Conexión:</strong> {error}
+                        </div>
+                    </div>
+                )}
+
                 {loading ? (
                     <div style={{ padding: '40px', textAlign: 'center', color: 'var(--text-secondary)' }}>Cargando clientes...</div>
                 ) : (
@@ -172,10 +239,17 @@ export default function Clients() {
                             {currentClients.map(client => (
                                 <tr key={client.id}>
                                     <td><span style={{ fontWeight: 500, color: 'white' }}>{client.name}</span></td>
-                                    <td><span style={{ color: 'var(--text-secondary)' }}>{client.rif}</span></td>
+                                    <td>
+                                        <span style={{ color: 'var(--text-secondary)' }}>
+                                            {client.rif.startsWith('PENDIENTE-') ? (
+                                                <span style={{ fontStyle: 'italic', opacity: 0.6 }}>Pendiente</span>
+                                            ) : client.rif}
+                                        </span>
+                                    </td>
                                     <td>
                                         <span style={{ 
-                                            background: 'rgba(56, 189, 248, 0.1)', color: '#38bdf8', 
+                                            background: client.state === 'Sin Registrar' ? 'rgba(255, 255, 255, 0.05)' : 'rgba(56, 189, 248, 0.1)', 
+                                            color: client.state === 'Sin Registrar' ? 'var(--text-secondary)' : '#38bdf8', 
                                             padding: '4px 8px', borderRadius: '6px', fontSize: '0.75rem', fontWeight: '600'
                                         }}>
                                             {client.state}
@@ -297,24 +371,27 @@ export default function Clients() {
                                     required
                                     value={formData.name}
                                     onChange={e => setFormData({...formData, name: e.target.value})}
+                                    placeholder="Nombre del cliente o Razón Social"
                                     style={{ width: '100%', padding: '12px', borderRadius: '10px', background: 'var(--bg-primary)', border: '1px solid var(--glass-border)', color: 'white', fontFamily: 'inherit' }}
                                 />
                             </div>
                             
                             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '16px' }}>
                                 <div>
-                                    <label style={{ display: 'block', marginBottom: '8px', color: 'var(--text-secondary)', fontSize: '0.875rem' }}>RIF *</label>
+                                    <label style={{ display: 'block', marginBottom: '8px', color: 'var(--text-secondary)', fontSize: '0.875rem' }}>RIF (Opcional)</label>
                                     <input 
-                                        required
                                         value={formData.rif}
-                                        onChange={e => setFormData({...formData, rif: e.target.value})}
+                                        onChange={e => {
+                                            const formatted = formatRIF(e.target.value);
+                                            setFormData({...formData, rif: formatted});
+                                        }}
+                                        placeholder="Ej: J-12345678-9"
                                         style={{ width: '100%', padding: '12px', borderRadius: '10px', background: 'var(--bg-primary)', border: '1px solid var(--glass-border)', color: 'white', fontFamily: 'inherit' }}
                                     />
                                 </div>
                                 <div>
-                                    <label style={{ display: 'block', marginBottom: '8px', color: 'var(--text-secondary)', fontSize: '0.875rem' }}>Estado (Venezuela) *</label>
+                                    <label style={{ display: 'block', marginBottom: '8px', color: 'var(--text-secondary)', fontSize: '0.875rem' }}>Estado (Opcional)</label>
                                     <select 
-                                        required
                                         value={formData.state}
                                         onChange={e => setFormData({...formData, state: e.target.value})}
                                         style={{ width: '100%', padding: '12px', borderRadius: '10px', background: 'var(--bg-primary)', border: '1px solid var(--glass-border)', color: 'white', fontFamily: 'inherit' }}
@@ -330,6 +407,7 @@ export default function Clients() {
                                 <input 
                                     value={formData.address}
                                     onChange={e => setFormData({...formData, address: e.target.value})}
+                                    placeholder="Dirección física de la sucursal"
                                     style={{ width: '100%', padding: '12px', borderRadius: '10px', background: 'var(--bg-primary)', border: '1px solid var(--glass-border)', color: 'white', fontFamily: 'inherit' }}
                                 />
                             </div>
@@ -340,6 +418,7 @@ export default function Clients() {
                                     <input 
                                         value={formData.phone}
                                         onChange={e => setFormData({...formData, phone: e.target.value})}
+                                        placeholder="Ej: 0412-1234567"
                                         style={{ width: '100%', padding: '12px', borderRadius: '10px', background: 'var(--bg-primary)', border: '1px solid var(--glass-border)', color: 'white', fontFamily: 'inherit' }}
                                     />
                                 </div>
@@ -349,6 +428,7 @@ export default function Clients() {
                                         type="email"
                                         value={formData.email}
                                         onChange={e => setFormData({...formData, email: e.target.value})}
+                                        placeholder="correo@empresa.com"
                                         style={{ width: '100%', padding: '12px', borderRadius: '10px', background: 'var(--bg-primary)', border: '1px solid var(--glass-border)', color: 'white', fontFamily: 'inherit' }}
                                     />
                                 </div>
@@ -359,6 +439,7 @@ export default function Clients() {
                                 <input 
                                     value={formData.contact_person}
                                     onChange={e => setFormData({...formData, contact_person: e.target.value})}
+                                    placeholder="Nombre del encargado de compras/logística"
                                     style={{ width: '100%', padding: '12px', borderRadius: '10px', background: 'var(--bg-primary)', border: '1px solid var(--glass-border)', color: 'white', fontFamily: 'inherit' }}
                                 />
                             </div>

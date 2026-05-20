@@ -203,7 +203,7 @@ const generateStateBarChartImage = (dispatches, totalQuantity) => {
 };
 
 // Generador y Exportador Principal a PDF (Estricto, Corporativo y Limpio)
-export const exportDispatchesToPDF = (dispatches, startDate, endDate, totalQuantity) => {
+export const exportDispatchesToPDF = (dispatches, startDate, endDate, totalQuantity, activeFilters = null) => {
   if (!dispatches || dispatches.length === 0) {
     alert('No hay datos disponibles para exportar en este periodo.');
     return;
@@ -246,6 +246,42 @@ export const exportDispatchesToPDF = (dispatches, startDate, endDate, totalQuant
     doc.setTextColor(37, 99, 235); // Azul del sistema
     doc.text(`Volumen Total Despachado: ${totalQuantity.toFixed(2)} TM`, 196, 46, { align: 'right' });
 
+    // Determinar si hay filtros activos y armar descripción
+    let hasFilters = false;
+    let filterText = '';
+    let chartY = 52;
+    let tableStartY = 108;
+
+    if (activeFilters) {
+      const filters = [];
+      if (activeFilters.productType && activeFilters.productType !== 'Todos') {
+        filters.push(`Producto: ${activeFilters.productType}`);
+      }
+      if (activeFilters.client && activeFilters.client !== 'Todos') {
+        filters.push(`Cliente: ${activeFilters.client}`);
+      }
+      if (activeFilters.status && activeFilters.status !== 'Todos') {
+        filters.push(`Estatus: ${activeFilters.status}`);
+      }
+      if (activeFilters.searchQuery && activeFilters.searchQuery.trim() !== '') {
+        filters.push(`Búsqueda: "${activeFilters.searchQuery}"`);
+      }
+
+      if (filters.length > 0) {
+        hasFilters = true;
+        filterText = `Filtros activos: ${filters.join('  |  ')}`;
+        chartY = 58;
+        tableStartY = 114;
+      }
+    }
+
+    if (hasFilters) {
+      doc.setFont('helvetica', 'italic');
+      doc.setFontSize(8.5);
+      doc.setTextColor(120, 130, 140);
+      doc.text(filterText, 14, 52);
+    }
+
     // ==========================================
     // INCRUSTACIÓN DE GRÁFICOS (CERO ROJO)
     // ==========================================
@@ -254,8 +290,8 @@ export const exportDispatchesToPDF = (dispatches, startDate, endDate, totalQuant
       const stateBase64 = generateStateBarChartImage(dispatches, totalQuantity);
 
       // Posicionar gráficos lado a lado (Ancho 88mm cada uno con 6mm de separación)
-      doc.addImage(donutBase64, 'PNG', 14, 52, 88, 50);
-      doc.addImage(stateBase64, 'PNG', 108, 52, 88, 50);
+      doc.addImage(donutBase64, 'PNG', 14, chartY, 88, 48);
+      doc.addImage(stateBase64, 'PNG', 108, chartY, 88, 48);
     } catch (err) {
       console.error('Error al generar e incrustar gráficos en PDF:', err);
     }
@@ -280,7 +316,7 @@ export const exportDispatchesToPDF = (dispatches, startDate, endDate, totalQuant
     });
 
     autoTable(doc, {
-      startY: 108,
+      startY: tableStartY,
       head: [tableHeaders],
       body: tableRows,
       theme: 'grid',
@@ -309,9 +345,38 @@ export const exportDispatchesToPDF = (dispatches, startDate, endDate, totalQuant
       }
     });
 
+    // ==========================================
+    // MARCA DE AGUA Y CERTIFICACIÓN DE PÁGINA (VIVE FLOW DEV)
+    // ==========================================
+    const pageCount = doc.internal.getNumberOfPages();
+    for (let i = 1; i <= pageCount; i++) {
+      doc.setPage(i);
+      
+      // Marca de agua central ultra-suave y elegante
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(22);
+      doc.setTextColor(243, 244, 246); // Gris hielo casi imperceptible
+      
+      doc.text('SISTEMA DESARROLLADO POR VIVE FLOW DEV', 105, 140, {
+        align: 'center',
+        angle: 315
+      });
+      doc.text('TRIPOLIERP ENTERPRISE SOLUTION', 105, 152, {
+        align: 'center',
+        angle: 315
+      });
+
+      // Pie de página institucional sutil
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(7.5);
+      doc.setTextColor(160, 174, 192);
+      doc.text('TripoliERP  |  Certificado y Desarrollado por Vive flow dev', 14, 287);
+      doc.text(`Página ${i} de ${pageCount}`, 196, 287, { align: 'right' });
+    }
+
     // Guardar y descargar PDF
     const dateStr = getLocalDateStr();
-    doc.save(`OmniDispatch_Reporte_Operaciones_${dateStr}.pdf`);
+    doc.save(`TripoliERP_Reporte_Operaciones_${dateStr}.pdf`);
   } catch (mainErr) {
     console.error('Error fatal exportando a PDF:', mainErr);
     alert('Ocurrió un error al generar el PDF. Revisa la consola para más detalles.');

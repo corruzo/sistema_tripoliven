@@ -29,11 +29,10 @@ const Header = ({ user, onLogout }) => {
       display: 'flex',
       alignItems: 'center',
       justifyContent: 'flex-end',
-      padding: '12px 160px 24px 0', // 160px de padding derecho para dejar el espacio exacto a los botones nativos de Windows [ - ] [ [] ] [ X ]
+      padding: '0 0 24px 0',
       gap: '20px',
       position: 'relative',
-      zIndex: 10,
-      WebkitAppRegion: 'drag' // Permite arrastrar la ventana desde el área libre del header
+      zIndex: 10
     }}>
       
       {/* Botón de Cambio de Tema */}
@@ -44,7 +43,6 @@ const Header = ({ user, onLogout }) => {
           background: 'var(--glass-bg)', border: '1px solid var(--glass-border)',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
           color: 'var(--text-secondary)', cursor: 'pointer', transition: 'all 0.2s',
-          WebkitAppRegion: 'no-drag', // Evita que arrastrar la ventana bloquee el clic
           boxShadow: '0 4px 12px rgba(0,0,0,0.05)'
         }}
         onMouseOver={e => { e.currentTarget.style.color = 'var(--accent-primary)'; e.currentTarget.style.borderColor = 'var(--accent-primary)'; }}
@@ -61,7 +59,6 @@ const Header = ({ user, onLogout }) => {
           padding: '8px 18px', borderRadius: '16px',
           background: 'var(--glass-bg)',
           border: '1px solid var(--glass-border)',
-          WebkitAppRegion: 'no-drag',
           boxShadow: '0 4px 12px rgba(0,0,0,0.05)'
         }}>
           <div style={{
@@ -88,8 +85,7 @@ const Header = ({ user, onLogout }) => {
           padding: '12px 20px', borderRadius: '14px',
           background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.2)',
           color: '#ef4444', fontWeight: '600', fontSize: '0.9rem', cursor: 'pointer',
-          transition: 'all 0.2s',
-          WebkitAppRegion: 'no-drag'
+          transition: 'all 0.2s'
         }}
         onMouseOver={e => { e.currentTarget.style.background = '#ef4444'; e.currentTarget.style.color = '#ffffff'; }}
         onMouseOut={e => { e.currentTarget.style.background = 'rgba(239, 68, 68, 0.1)'; e.currentTarget.style.color = '#ef4444'; }}
