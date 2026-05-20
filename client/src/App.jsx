@@ -23,11 +23,7 @@ function App() {
   const [isServerOnline, setIsServerOnline] = useState(true);
   const [showWarningModal, setShowWarningModal] = useState(false);
   const [countdown, setCountdown] = useState(60);
-  
-  // (Rest of the state and hooks unchanged...)
 
-
-  // Health check para el servidor
   const checkServerStatus = async () => {
     try {
       const res = await fetch(`${API_BASE_URL}/api/dashboard/stats`, { method: 'GET' });
@@ -41,7 +37,6 @@ function App() {
     }
   };
 
-  // 1. Initial login verification on mount
   useEffect(() => {
     const savedUser = localStorage.getItem('tripoliven_user');
     const lastActive = localStorage.getItem('tripoliven_last_active');
@@ -52,7 +47,6 @@ function App() {
       const elapsedActive = now - Number(lastActive);
       const elapsedAbsolute = now - Number(loginTime);
 
-      // Si ha pasado más de 15 minutos inactivo o más de 12 horas totales
       if (elapsedActive > 15 * 60 * 1000 || elapsedAbsolute > 12 * 60 * 60 * 1000) {
         localStorage.removeItem('tripoliven_user');
         localStorage.removeItem('tripoliven_last_active');
@@ -65,20 +59,17 @@ function App() {
     }
     setLoading(false);
 
-    // Ejecutar primer ping y programar intervalo de revisión cada 6 segundos
     checkServerStatus();
     const interval = setInterval(checkServerStatus, 6000);
     return () => clearInterval(interval);
   }, []);
 
-  // 2. Activity listeners to update tripoliven_last_active
   useEffect(() => {
     if (!currentUser) return;
 
     let lastWrite = Date.now();
     const updateActivity = () => {
       const now = Date.now();
-      // Throttling: solo escribir en localStorage como máximo cada 4 segundos
       if (now - lastWrite > 4000) {
         localStorage.setItem('tripoliven_last_active', now.toString());
         lastWrite = now;
@@ -98,13 +89,12 @@ function App() {
     };
   }, [currentUser]);
 
-  // 3. Inactivity and Absolute Timeout Checker Interval
   useEffect(() => {
     if (!currentUser) return;
 
-    const TIMEOUT_INACTIVITY = 15 * 60 * 1000; // 15 minutos
-    const TIMEOUT_WARNING = 14 * 60 * 1000;    // 14 minutos (aviso al minuto restante)
-    const TIMEOUT_ABSOLUTE = 12 * 60 * 60 * 1000; // 12 horas absoluto
+    const TIMEOUT_INACTIVITY = 15 * 60 * 1000;
+    const TIMEOUT_WARNING = 14 * 60 * 1000;
+    const TIMEOUT_ABSOLUTE = 12 * 60 * 60 * 1000;
 
     const checkSession = () => {
       const now = Date.now();
@@ -114,21 +104,18 @@ function App() {
       const elapsedActive = now - lastActive;
       const elapsedAbsolute = now - loginTime;
 
-      // A. Límite absoluto (12 Horas)
       if (elapsedAbsolute > TIMEOUT_ABSOLUTE) {
         performLogout(true);
         alert('Tu sesión ha expirado por límite absoluto de seguridad corporativa (12 horas). Inicia sesión nuevamente.');
         return;
       }
 
-      // B. Expiración de inactividad (15 Minutos)
       if (elapsedActive > TIMEOUT_INACTIVITY) {
         performLogout(true);
         alert('Tu sesión ha expirado por inactividad. Por razones de seguridad, debes iniciar sesión de nuevo.');
         return;
       }
 
-      // C. Mostrar advertencia en el minuto 14
       if (elapsedActive > TIMEOUT_WARNING) {
         const remainingMs = TIMEOUT_INACTIVITY - elapsedActive;
         const remainingSecs = Math.max(0, Math.ceil(remainingMs / 1000));
@@ -183,7 +170,6 @@ function App() {
 
   return (
     <div className="app-container" style={{ position: 'relative' }}>
-      {/* Banner de Servidor Desconectado (Blindaje UX Premium) */}
       {!isServerOnline && (
         <div style={{
           position: 'fixed', top: '24px', right: '24px', background: 'rgba(239, 68, 68, 0.95)',
@@ -197,7 +183,6 @@ function App() {
         </div>
       )}
 
-      {/* Modal Premium de Advertencia de Expiración de Sesión */}
       {showWarningModal && (
         <div style={{
           position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh',
@@ -216,7 +201,6 @@ function App() {
             color: 'white',
             fontFamily: 'Outfit, sans-serif'
           }}>
-            {/* Icono de Alerta con Pulso de Advertencia */}
             <div style={{
               width: '64px', height: '64px', borderRadius: '50%',
               background: 'rgba(245, 158, 11, 0.1)',
@@ -231,15 +215,14 @@ function App() {
             <h2 style={{ fontSize: '1.4rem', fontWeight: '700', margin: '0 0 10px 0', color: '#f59e0b' }}>
               Sesión por Expirar
             </h2>
-            
+
             <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', lineHeight: '1.5', margin: '0 0 24px 0' }}>
-              Tu sesión se cerrará automáticamente por inactividad para proteger la seguridad de tus datos en 
+              Tu sesión se cerrará automáticamente por inactividad para proteger la seguridad de tus datos en
               <strong style={{ color: 'white', display: 'block', fontSize: '1.6rem', marginTop: '12px', fontFamily: 'monospace' }}>
                 {countdown} segundos
               </strong>
             </p>
 
-            {/* Barra de progreso de cuenta regresiva */}
             <div style={{
               width: '100%', height: '6px', background: 'rgba(255,255,255,0.05)',
               borderRadius: '3px', overflow: 'hidden', marginBottom: '28px'
@@ -287,7 +270,6 @@ function App() {
         </div>
       )}
 
-      {/* Sleek, Premium Window Titlebar (Electron Draggable) */}
       <div className="window-titlebar">
         <div className="window-titlebar-logo">
           <Hexagon size={13} className="titlebar-logo-icon" />

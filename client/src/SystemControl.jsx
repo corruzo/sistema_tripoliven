@@ -233,7 +233,7 @@ const SystemControl = () => {
   };
 
   return (
-    <div className="main-content-scrollable" style={{ display: 'flex', flexDirection: 'column', height: '100%', paddingBottom: '30px' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', paddingBottom: '30px' }}>
       
       {/* Cabecera del Panel */}
       <div className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
