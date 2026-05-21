@@ -703,7 +703,7 @@ const Dispatches = () => {
           <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>(Calculadas en tiempo real)</span>
         </div>
         <button 
-          onClick={() => navigate('/dispatches/analytics')}
+          onClick={() => navigate('/reports')}
           style={{
             background: 'var(--accent-gradient)', border: 'none',
             color: 'white', padding: '8px 16px', borderRadius: '8px', cursor: 'pointer',

@@ -51,10 +51,10 @@ const generateDonutChartImage = (dispatches, totalQuantity) => {
 
   // Paleta del Sistema (Índigo, Azul Real, Esmeralda, Cian, Violeta - CERO ROJO)
   const colors = {
-    'Tripolifosfato': '#3b82f6', // Azul Real
-    'Ácido Fosfórico': '#10b981', // Esmeralda
-    'Pirofosfato': '#8b5cf6', // Violeta
-    'Otros': '#06b6d4' // Cian
+    'Tripolifosfato': '#3b82f6',
+    'Ácido Fosfórico': '#10b981',
+    'Pirofosfato': '#8b5cf6',
+    'Otros': '#06b6d4'
   };
   const defaultColors = ['#3b82f6', '#10b981', '#8b5cf6', '#06b6d4', '#6366f1', '#ec4899'];
 
@@ -88,7 +88,7 @@ const generateDonutChartImage = (dispatches, totalQuantity) => {
   ctx.font = 'bold 36px "Segoe UI"';
   ctx.textAlign = 'center';
   ctx.fillText(totalQuantity.toFixed(1), centerX, centerY + 10);
-  
+
   ctx.fillStyle = '#64748b';
   ctx.font = '20px "Segoe UI"';
   ctx.fillText('TM Totales', centerX, centerY + 38);
@@ -118,8 +118,8 @@ const generateDonutChartImage = (dispatches, totalQuantity) => {
   return canvas.toDataURL('image/png');
 };
 
-// Gráfico 2: Barras Horizontales de Distribución Geográfica (Alta Resolución 2x)
-const generateStateBarChartImage = (dispatches, totalQuantity) => {
+// Gráfico 2: Barras Horizontales Genérico (Alta Resolución 2x)
+const generateBarChartImage = (dispatches, totalQuantity, type = 'states') => {
   const canvas = document.createElement('canvas');
   canvas.width = 1000;
   canvas.height = 560;
@@ -131,37 +131,74 @@ const generateStateBarChartImage = (dispatches, totalQuantity) => {
   ctx.lineWidth = 2;
   ctx.strokeRect(4, 4, canvas.width - 8, canvas.height - 8);
 
+  let title = 'Distribución Analítica';
+  let dataMap = {};
+
+  if (type === 'states') {
+    title = 'Distribución Geográfica (Top Destinos)';
+    dataMap = dispatches.reduce((acc, d) => {
+      const state = d.destination_state || d.destination_location;
+      if (!state || d.status === 'Anulado') return acc;
+      acc[state] = Math.round(((acc[state] || 0) + Number(d.quantity_tm || 0)) * 1000) / 1000;
+      return acc;
+    }, {});
+  } else if (type === 'client') {
+    title = 'Top Clientes (Por Volumen TM)';
+    dataMap = dispatches.reduce((acc, d) => {
+      const client = d.client_name;
+      if (!client || d.status === 'Anulado') return acc;
+      acc[client] = Math.round(((acc[client] || 0) + Number(d.quantity_tm || 0)) * 1000) / 1000;
+      return acc;
+    }, {});
+  } else if (type === 'product' || type === 'months') {
+    title = 'Evolución Mensual (TM)';
+    const monthNames = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"];
+    dataMap = dispatches.reduce((acc, d) => {
+      if (d.status === 'Anulado') return acc;
+      const dateStr = d.dispatch_datetime ? String(d.dispatch_datetime).split('T')[0] : (d.dispatch_date ? String(d.dispatch_date).split('T')[0] : '');
+      if (dateStr) {
+        const parts = dateStr.split('-');
+        if (parts.length >= 2) {
+          const year = parts[0].slice(2);
+          const monthNum = parseInt(parts[1], 10);
+          const label = `${monthNames[monthNum - 1]} '${year}`;
+          acc[label] = Math.round(((acc[label] || 0) + Number(d.quantity_tm || 0)) * 1000) / 1000;
+        }
+      }
+      return acc;
+    }, {});
+  }
+
   ctx.fillStyle = '#0f172a';
   ctx.font = 'bold 28px "Segoe UI", Arial, sans-serif';
-  ctx.fillText('Distribución Geográfica (Top Destinos)', 32, 52);
+  ctx.fillText(title, 32, 52);
 
-  const destinationDistribution = dispatches.reduce((acc, d) => {
-    const state = d.destination_state || d.destination_location;
-    if (!state || d.status === 'Anulado') return acc;
-    acc[state] = Math.round(((acc[state] || 0) + Number(d.quantity_tm || 0)) * 1000) / 1000;
-    return acc;
-  }, {});
-  
-  const destinationsArray = Object.keys(destinationDistribution)
-    .map(key => ({ name: key, value: destinationDistribution[key] }))
-    .filter(d => d.value > 0)
-    .sort((a, b) => b.value - a.value)
-    .slice(0, 6); 
+  let dataArray = Object.keys(dataMap)
+    .map(key => ({ name: key, value: dataMap[key] }))
+    .filter(d => d.value > 0);
 
-  if (destinationsArray.length === 0 || totalQuantity === 0) {
+  if (type !== 'product' && type !== 'months') {
+    dataArray = dataArray.sort((a, b) => b.value - a.value);
+  } else {
+    // For months, we don't sort by value. They are already inherently chronological or we can just keep them as they appear (assuming chronological input).
+  }
+
+  dataArray = dataArray.slice(0, 6);
+
+  if (dataArray.length === 0 || totalQuantity === 0) {
     ctx.fillStyle = '#94a3b8';
     ctx.font = 'italic 24px "Segoe UI"';
     ctx.fillText('Sin datos geográficos para graficar', canvas.width / 2 - 160, canvas.height / 2);
     return canvas.toDataURL('image/png');
   }
 
-  const maxVal = Math.max(...destinationsArray.map(d => d.value), 1);
+  const maxVal = Math.max(...dataArray.map(d => d.value), 1);
   const startY = 110;
   const barHeight = 32;
   const gap = 64;
   const maxBarWidth = 480;
 
-  destinationsArray.forEach((dest, idx) => {
+  dataArray.forEach((dest, idx) => {
     const y = startY + (idx * gap);
     const percent = (dest.value / maxVal);
     const barWidth = percent * maxBarWidth;
@@ -180,8 +217,8 @@ const generateStateBarChartImage = (dispatches, totalQuantity) => {
 
     // Gradiente en tonos del sistema (Azul a Índigo - CERO ROJO)
     const grad = ctx.createLinearGradient(250, y, 250 + barWidth, y);
-    grad.addColorStop(0, '#3b82f6'); // Azul Real
-    grad.addColorStop(1, '#4f46e5'); // Índigo Ejecutivo
+    grad.addColorStop(0, '#3b82f6');
+    grad.addColorStop(1, '#4f46e5');
 
     ctx.fillStyle = grad;
     ctx.beginPath();
@@ -193,7 +230,7 @@ const generateStateBarChartImage = (dispatches, totalQuantity) => {
     ctx.font = 'bold 22px "Segoe UI"';
     ctx.textAlign = 'left';
     ctx.fillText(`${dest.value.toFixed(2)} tm`, 264 + maxBarWidth, y + 24);
-    
+
     ctx.fillStyle = '#64748b';
     ctx.font = '20px "Segoe UI"';
     ctx.fillText(`(${totalPercent}%)`, 380 + maxBarWidth, y + 24);
@@ -203,70 +240,61 @@ const generateStateBarChartImage = (dispatches, totalQuantity) => {
 };
 
 // Generador y Exportador Principal a PDF (Estricto, Corporativo y Limpio)
-export const exportDispatchesToPDF = (dispatches, startDate, endDate, totalQuantity, activeFilters = null) => {
+export const exportDispatchesToPDF = (dispatches, startDate, endDate, totalQuantity, activeFilters = null, reportType = 'general') => {
   if (!dispatches || dispatches.length === 0) {
     alert('No hay datos disponibles para exportar en este periodo.');
     return;
   }
 
   try {
-    // Crear documento PDF en formato A4 vertical
     const doc = new jsPDF('p', 'mm', 'a4');
 
-    // ==========================================
-    // ENCABEZADO CORPORATIVO BÁSICO (TRIPOLIVEN)
-    // ==========================================
+    // ======== ENCABEZADO CORPORATIVO ========
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(20);
-    doc.setTextColor(15, 23, 42); // Gris muy oscuro / Negro
+    doc.setTextColor(15, 23, 42);
     doc.text('TRIPOLIVEN C.A.', 14, 22);
 
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(9.5);
-    doc.setTextColor(100, 116, 139); // Gris sobrio
+    doc.setTextColor(100, 116, 139);
     doc.text('RIF: J-00045211-9   |   Planta Operativa: Zona Industrial Morón, Edo. Carabobo, Venezuela', 14, 28);
 
-    // Línea separadora limpia
     doc.setLineWidth(0.5);
     doc.setDrawColor(203, 213, 225);
     doc.line(14, 32, 196, 32);
 
-    // Subtítulo del Reporte
+    // Subtítulo del reporte según tipo
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(13);
     doc.setTextColor(30, 41, 59);
-    doc.text('REPORTE GENERAL DE DESPACHOS Y LOGÍSTICA', 14, 40);
+    const subtitleMap = {
+      general: 'REPORTE GENERAL DE DESPACHOS Y LOGÍSTICA',
+      client: 'REPORTE DETALLADO POR CLIENTE',
+      product: 'REPORTE DETALLADO POR PRODUCTO'
+    };
+    doc.text(subtitleMap[reportType] || subtitleMap['general'], 14, 40);
 
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(9.5);
     doc.setTextColor(71, 85, 105);
     doc.text(`Periodo: ${startDate || 'Inicio'} al ${endDate || 'Hoy'}      |      Fecha Emisión: ${getLocalDateStr()}`, 14, 46);
-
     doc.setFont('helvetica', 'bold');
-    doc.setTextColor(37, 99, 235); // Azul del sistema
+    doc.setTextColor(37, 99, 235);
     doc.text(`Volumen Total Despachado: ${totalQuantity.toFixed(2)} TM`, 196, 46, { align: 'right' });
 
-    // Determinar si hay filtros activos y armar descripción
+    // Filtros activos
     let hasFilters = false;
     let filterText = '';
     let chartY = 52;
     let tableStartY = 108;
-
     if (activeFilters) {
       const filters = [];
-      if (activeFilters.productType && activeFilters.productType !== 'Todos') {
-        filters.push(`Producto: ${activeFilters.productType}`);
-      }
-      if (activeFilters.client && activeFilters.client !== 'Todos') {
-        filters.push(`Cliente: ${activeFilters.client}`);
-      }
-      if (activeFilters.status && activeFilters.status !== 'Todos') {
-        filters.push(`Estatus: ${activeFilters.status}`);
-      }
-      if (activeFilters.searchQuery && activeFilters.searchQuery.trim() !== '') {
-        filters.push(`Búsqueda: "${activeFilters.searchQuery}"`);
-      }
-
+      if (activeFilters.productType && activeFilters.productType !== 'Todos') filters.push(`Producto: ${activeFilters.productType}`);
+      if (activeFilters.client && activeFilters.client !== 'Todos') filters.push(`Cliente: ${activeFilters.client}`);
+      if (activeFilters.status && activeFilters.status !== 'Todos') filters.push(`Estatus: ${activeFilters.status}`);
+      if (activeFilters.state && activeFilters.state !== 'Todos') filters.push(`Estado: ${activeFilters.state}`);
+      if (activeFilters.searchQuery && activeFilters.searchQuery.trim() !== '') filters.push(`Búsqueda: "${activeFilters.searchQuery}"`);
       if (filters.length > 0) {
         hasFilters = true;
         filterText = `Filtros activos: ${filters.join('  |  ')}`;
@@ -274,7 +302,6 @@ export const exportDispatchesToPDF = (dispatches, startDate, endDate, totalQuant
         tableStartY = 114;
       }
     }
-
     if (hasFilters) {
       doc.setFont('helvetica', 'italic');
       doc.setFontSize(8.5);
@@ -282,29 +309,30 @@ export const exportDispatchesToPDF = (dispatches, startDate, endDate, totalQuant
       doc.text(filterText, 14, 52);
     }
 
-    // ==========================================
-    // INCRUSTACIÓN DE GRÁFICOS (CERO ROJO)
-    // ==========================================
+    // ======== GRÁFICOS (Se renderizan para todos los reportes con sus respectivos filtros) ========
     try {
       const donutBase64 = generateDonutChartImage(dispatches, totalQuantity);
-      const stateBase64 = generateStateBarChartImage(dispatches, totalQuantity);
 
-      // Posicionar gráficos lado a lado (Ancho 88mm cada uno con 6mm de separación)
+      let barChartType = 'states';
+      if (reportType === 'client') barChartType = 'client';
+      if (reportType === 'product') barChartType = 'months';
+
+      const stateBase64 = generateBarChartImage(dispatches, totalQuantity, barChartType);
+
       doc.addImage(donutBase64, 'PNG', 14, chartY, 88, 48);
       doc.addImage(stateBase64, 'PNG', 108, chartY, 88, 48);
     } catch (err) {
       console.error('Error al generar e incrustar gráficos en PDF:', err);
     }
 
-    // ==========================================
-    // TABLA DE REGISTROS (jspdf-autotable)
-    // ==========================================
+    // ======== TABLA DE REGISTROS ========
     const tableHeaders = ['Nº Orden', 'Cliente Corporativo', 'Línea de Producto', 'Cant (TM)', 'Destino', 'Fecha Salida'];
     const tableRows = dispatches.map(d => {
       const pType = d.product_type || d.product_name || '-';
       const dState = d.destination_state || d.destination_location || '-';
-      const dateStr = d.dispatch_datetime ? String(d.dispatch_datetime).split('T')[0] : (d.dispatch_date ? String(d.dispatch_date).split('T')[0] : '-');
-
+      const dateStr = d.dispatch_datetime
+        ? String(d.dispatch_datetime).split('T')[0]
+        : (d.dispatch_date ? String(d.dispatch_date).split('T')[0] : '-');
       return [
         d.order_number || '-',
         d.client_name || '-',
@@ -320,23 +348,11 @@ export const exportDispatchesToPDF = (dispatches, startDate, endDate, totalQuant
       head: [tableHeaders],
       body: tableRows,
       theme: 'grid',
-      styles: {
-        font: 'helvetica',
-        fontSize: 9,
-        cellPadding: 4,
-        textColor: [51, 65, 85]
-      },
-      headStyles: {
-        fillColor: [37, 99, 235], // Azul Moderno del Sistema
-        textColor: [255, 255, 255],
-        fontStyle: 'bold',
-        halign: 'center'
-      },
-      alternateRowStyles: {
-        fillColor: [248, 250, 252] // Gris ultra suave
-      },
+      styles: { font: 'helvetica', fontSize: 9, cellPadding: 4, textColor: [51, 65, 85] },
+      headStyles: { fillColor: [37, 99, 235], textColor: [255, 255, 255], fontStyle: 'bold', halign: 'center' },
+      alternateRowStyles: { fillColor: [248, 250, 252] },
       columnStyles: {
-        0: { halign: 'center', fontStyle: 'bold', cellWidth: 26 },
+        0: { halign: 'center', fontStyle: 'bold', textColor: [15, 23, 42], cellWidth: 26 },
         1: { cellWidth: 54 },
         2: { cellWidth: 36 },
         3: { halign: 'right', fontStyle: 'bold', textColor: [15, 23, 42], cellWidth: 24 },
@@ -345,28 +361,14 @@ export const exportDispatchesToPDF = (dispatches, startDate, endDate, totalQuant
       }
     });
 
-    // ==========================================
-    // MARCA DE AGUA Y CERTIFICACIÓN DE PÁGINA (VIVE FLOW DEV)
-    // ==========================================
+    // ======== MARCA DE AGUA y PÁGINAS ========
     const pageCount = doc.internal.getNumberOfPages();
     for (let i = 1; i <= pageCount; i++) {
       doc.setPage(i);
-      
-      // Marca de agua central ultra-suave y elegante
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(22);
-      doc.setTextColor(243, 244, 246); // Gris hielo casi imperceptible
-      
-      doc.text('SISTEMA DESARROLLADO POR VIVE FLOW DEV', 105, 140, {
-        align: 'center',
-        angle: 315
-      });
-      doc.text('TRIPOLIERP ENTERPRISE SOLUTION', 105, 152, {
-        align: 'center',
-        angle: 315
-      });
-
-      // Pie de página institucional sutil
+      doc.setTextColor(243, 244, 246);
+      doc.text('TRIPOLIERP ENTERPRISE SOLUTION', 105, 152, { align: 'center', angle: 315 });
       doc.setFont('helvetica', 'normal');
       doc.setFontSize(7.5);
       doc.setTextColor(160, 174, 192);
@@ -374,11 +376,10 @@ export const exportDispatchesToPDF = (dispatches, startDate, endDate, totalQuant
       doc.text(`Página ${i} de ${pageCount}`, 196, 287, { align: 'right' });
     }
 
-    // Guardar y descargar PDF
     const dateStr = getLocalDateStr();
-    doc.save(`TripoliERP_Reporte_Operaciones_${dateStr}.pdf`);
+    doc.save(`TripoliERP_Reporte_${reportType}_${dateStr}.pdf`);
   } catch (mainErr) {
-    console.error('Error fatal exportando a PDF:', mainErr);
+    console.error('Error fatal exportando PDF:', mainErr);
     alert('Ocurrió un error al generar el PDF. Revisa la consola para más detalles.');
   }
 };

@@ -1,9 +1,10 @@
 const express = require('express');
 const router = express.Router();
 const db = require('../database');
+const { authenticateJWT, requireRole } = require('../middleware/authMiddleware');
 
 // GET all positions
-router.get('/', (req, res) => {
+router.get('/', authenticateJWT, (req, res) => {
     const query = `
         SELECT p.*, d.name as department_name 
         FROM positions p 
@@ -16,7 +17,7 @@ router.get('/', (req, res) => {
 });
 
 // POST new position
-router.post('/', (req, res) => {
+router.post('/', authenticateJWT, requireRole(['Administrador']), (req, res) => {
     const { name, department_id, description } = req.body;
     if (!name) return res.status(400).json({ error: 'El nombre del cargo es requerido.' });
     if (!department_id) return res.status(400).json({ error: 'El departamento es requerido.' });
@@ -29,7 +30,7 @@ router.post('/', (req, res) => {
 });
 
 // PUT update position
-router.put('/:id', (req, res) => {
+router.put('/:id', authenticateJWT, requireRole(['Administrador']), (req, res) => {
     const { name, department_id, description } = req.body;
     if (!name) return res.status(400).json({ error: 'El nombre del cargo es requerido.' });
     if (!department_id) return res.status(400).json({ error: 'El departamento es requerido.' });
@@ -42,7 +43,7 @@ router.put('/:id', (req, res) => {
 });
 
 // DELETE position
-router.delete('/:id', (req, res) => {
+router.delete('/:id', authenticateJWT, requireRole(['Administrador']), (req, res) => {
     db.run("DELETE FROM positions WHERE id = ?", [req.params.id], function(err) {
         if (err) {
             if (err.message.includes('FOREIGN KEY constraint failed')) {

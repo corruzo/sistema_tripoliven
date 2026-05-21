@@ -1,9 +1,10 @@
 const express = require('express');
 const router = express.Router();
 const db = require('../database');
+const { authenticateJWT, requireRole } = require('../middleware/authMiddleware');
 
 // GET all departments
-router.get('/', (req, res) => {
+router.get('/', authenticateJWT, (req, res) => {
     const query = `
         SELECT d.*, u.name as manager_name 
         FROM departments d
@@ -16,7 +17,7 @@ router.get('/', (req, res) => {
 });
 
 // POST new department
-router.post('/', (req, res) => {
+router.post('/', authenticateJWT, requireRole(['Administrador']), (req, res) => {
     const { name, description, manager_id } = req.body;
     if (!name) return res.status(400).json({ error: 'El nombre del departamento es requerido.' });
 
@@ -33,7 +34,7 @@ router.post('/', (req, res) => {
 });
 
 // PUT update department
-router.put('/:id', (req, res) => {
+router.put('/:id', authenticateJWT, requireRole(['Administrador']), (req, res) => {
     const { name, description, manager_id } = req.body;
     if (!name) return res.status(400).json({ error: 'El nombre del departamento es requerido.' });
 
@@ -50,7 +51,7 @@ router.put('/:id', (req, res) => {
 });
 
 // DELETE department
-router.delete('/:id', (req, res) => {
+router.delete('/:id', authenticateJWT, requireRole(['Administrador']), (req, res) => {
     db.run("DELETE FROM departments WHERE id = ?", [req.params.id], function(err) {
         if (err) {
             if (err.message.includes('FOREIGN KEY constraint failed')) {
@@ -63,3 +64,4 @@ router.delete('/:id', (req, res) => {
 });
 
 module.exports = router;
+

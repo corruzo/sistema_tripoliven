@@ -1,9 +1,11 @@
 const express = require('express');
 const router = express.Router();
 const db = require('../database');
+const bcrypt = require('bcryptjs');
+const { authenticateJWT, requireRole } = require('../middleware/authMiddleware');
 
-// GET all users
-router.get('/', (req, res) => {
+// GET all users (Autenticado para cualquier rol registrado)
+router.get('/', authenticateJWT, (req, res) => {
     const query = `
         SELECT u.id, u.name, u.email, u.username, u.system_role, u.status, u.position_id, u.department_id,
                p.name as position_name, d.name as department_name
@@ -17,28 +19,36 @@ router.get('/', (req, res) => {
     });
 });
 
-// POST new user
-router.post('/', (req, res) => {
+// POST new user (Solo administradores)
+router.post('/', authenticateJWT, requireRole(['Administrador']), (req, res) => {
     const { name, email, username, password, system_role, status, position_id, department_id } = req.body;
     
     if (!name || !email || !username || !password) {
         return res.status(400).json({ error: 'Nombre, Correo, Nombre de usuario y Contraseña son obligatorios.' });
     }
 
+    // Hashear contraseña antes de guardar en SQLite
+    const hashedPassword = bcrypt.hashSync(password, 10);
+
     db.run("INSERT INTO users (name, email, username, password, system_role, status, position_id, department_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)", 
-    [name, email, username, password, system_role, status, position_id || null, department_id || null], function(err) {
+    [name, email, username, hashedPassword, system_role, status, position_id || null, department_id || null], function(err) {
         if (err) {
             if (err.message.includes('UNIQUE')) {
                 return res.status(400).json({ error: 'El correo electrónico o nombre de usuario ya existe.' });
             }
             return res.status(500).json({ error: 'Error al registrar usuario: ' + err.message });
         }
+        
+        // Log inmutable en el backend
+        const ip = req.ip || req.connection.remoteAddress;
+        db.logAudit(req.user.id, 'USUARIO_CREADO', `Se registró el usuario "${username}" con el rol "${system_role}".`, ip);
+
         res.json({ id: this.lastID, name, email, username, system_role, status, position_id, department_id });
     });
 });
 
-// PUT update user
-router.put('/:id', (req, res) => {
+// PUT update user (Solo administradores)
+router.put('/:id', authenticateJWT, requireRole(['Administrador']), (req, res) => {
     const { name, email, username, password, system_role, status, position_id, department_id } = req.body;
     
     if (!name || !email || !username) {
@@ -49,8 +59,10 @@ router.put('/:id', (req, res) => {
     let params = [name, email, username, system_role, status, position_id || null, department_id || null, req.params.id];
     
     if (password) {
+        // Hashear la contraseña si se está modificando
+        const hashedPassword = bcrypt.hashSync(password, 10);
         query = "UPDATE users SET name = ?, email = ?, username = ?, password = ?, system_role = ?, status = ?, position_id = ?, department_id = ? WHERE id = ?";
-        params = [name, email, username, password, system_role, status, position_id || null, department_id || null, req.params.id];
+        params = [name, email, username, hashedPassword, system_role, status, position_id || null, department_id || null, req.params.id];
     }
 
     db.run(query, params, function(err) {
@@ -60,16 +72,32 @@ router.put('/:id', (req, res) => {
             }
             return res.status(500).json({ error: 'Error al actualizar usuario: ' + err.message });
         }
+        
+        // Log inmutable en el backend
+        const ip = req.ip || req.connection.remoteAddress;
+        db.logAudit(req.user.id, 'USUARIO_EDITADO', `Se actualizaron los datos del usuario ID ${req.params.id} ("${username}").`, ip);
+
         res.json({ success: true, changes: this.changes });
     });
 });
 
-// DELETE user
-router.delete('/:id', (req, res) => {
+// DELETE user (Solo administradores)
+router.delete('/:id', authenticateJWT, requireRole(['Administrador']), (req, res) => {
+    // Evitar que el administrador se elimine a sí mismo
+    if (parseInt(req.params.id) === req.user.id) {
+        return res.status(400).json({ error: 'No puedes eliminar tu propia cuenta de usuario en sesión.' });
+    }
+
     db.run("DELETE FROM users WHERE id = ?", [req.params.id], function(err) {
         if (err) return res.status(500).json({ error: 'Error al eliminar usuario: ' + err.message });
+        
+        // Log inmutable en el backend
+        const ip = req.ip || req.connection.remoteAddress;
+        db.logAudit(req.user.id, 'USUARIO_ELIMINADO', `Se eliminó el usuario ID ${req.params.id}.`, ip);
+
         res.json({ success: true, changes: this.changes });
     });
 });
 
 module.exports = router;
+

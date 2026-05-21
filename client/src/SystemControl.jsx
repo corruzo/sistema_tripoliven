@@ -162,8 +162,8 @@ const SystemControl = () => {
     const file = e.target.files[0];
     if (!file) return;
 
-    if (!file.name.endsWith('.sqlite') && !file.name.endsWith('.db')) {
-      setActionMessage({ type: 'error', text: 'Por favor selecciona un archivo de base de datos SQLite válido (.sqlite o .db).' });
+    if (!file.name.endsWith('.sql')) {
+      setActionMessage({ type: 'error', text: 'Por favor selecciona un archivo de respaldo SQL válido (.sql).' });
       return;
     }
 
@@ -590,7 +590,7 @@ const SystemControl = () => {
                 type="file" 
                 ref={fileInputRef} 
                 onChange={handleFileChange} 
-                accept=".sqlite,.db" 
+                accept=".sql" 
                 style={{ display: 'none' }} 
               />
 
@@ -637,8 +637,8 @@ const SystemControl = () => {
               </strong>
               Para garantizar que el sistema nunca caiga y no existan fallos de concurrencia:
               <ul style={{ margin: '6px 0 0 0', paddingLeft: '20px' }}>
-                <li>Antes de realizar cualquier restauración, el sistema genera automáticamente un respaldo temporal de salvaguarda física llamado <code style={{ background: 'rgba(0,0,0,0.3)', padding: '2px 6px', borderRadius: '4px', color: 'white' }}>database.sqlite.bak</code>.</li>
-                <li>SQLite opera bajo el journal de alta velocidad <strong>Write-Ahead Logging (WAL)</strong>, el cual asegura que ninguna transacción de despacho quede a medias o corrupta.</li>
+                <li>La restauración se realiza mediante transacciones atómicas con <strong>Zero Downtime</strong>. Si un error ocurre, se revierte automáticamente sin corromper datos.</li>
+                <li>PostgreSQL opera bajo el estricto control de concurrencia multiversión (MVCC), garantizando que cientos de usuarios puedan facturar sin bloqueos.</li>
                 <li>Todos los respaldos y optimizaciones se registran de forma inmutable en la bitácora digital de auditoría, incluyendo la fecha, usuario administrador e IP remota.</li>
               </ul>
             </div>
@@ -682,7 +682,7 @@ const SystemControl = () => {
             
             <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', lineHeight: '1.6', margin: '0 0 24px 0' }}>
               Los archivos de despachos, clientes y personal han sido importados con éxito. 
-              El servidor se está reiniciando de manera segura en:
+              Aplicando nueva sesión segura en:
               <strong style={{ color: 'white', display: 'block', fontSize: '2.5rem', marginTop: '12px', fontFamily: 'monospace', textShadow: '0 0 10px rgba(99, 102, 241, 0.5)' }}>
                 {countdown}
               </strong>
@@ -700,7 +700,7 @@ const SystemControl = () => {
             </div>
             
             <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
-              Reconectando con el motor SQLite...
+              Reconectando con el motor PostgreSQL...
             </span>
           </div>
         </div>

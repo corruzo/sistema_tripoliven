@@ -1,24 +1,14 @@
 const express = require('express');
 const router = express.Router();
 const db = require('../database');
-
-let analyticsCache = null;
-let cacheTimestamp = 0;
-const CACHE_TTL = 5 * 60 * 1000; 
+const { authenticateJWT, requireRole } = require('../middleware/authMiddleware');
 
 const invalidateCache = () => {
-    analyticsCache = null;
+    // No-op: Caché de analíticas eliminada para garantizar sincronización en tiempo real
 };
 
-router.get('/analytics', (req, res) => {
+router.get('/analytics', authenticateJWT, (req, res) => {
     const { startDate, endDate } = req.query;
-    const now = Date.now();
-    
-    // Si no hay parámetros de filtro por fecha, podemos usar la caché general
-    const isFiltered = !!(startDate || endDate);
-    if (!isFiltered && analyticsCache && (now - cacheTimestamp < CACHE_TTL)) {
-        return res.json(analyticsCache);
-    }
 
     let query = `
         SELECT d.*, c.name as client_name 
@@ -120,7 +110,7 @@ router.get('/analytics', (req, res) => {
             .slice(-7);
 
         const result = {
-            cachedAt: isFiltered ? null : new Date().toISOString(),
+            cachedAt: null, // Sincronización 100% en tiempo real, sin caché
             totalQuantity,
             avgQuantity: filteredRows.length > 0 ? round2(totalQuantity / filteredRows.length) : 0,
             totalDispatches: filteredRows.length,
@@ -131,11 +121,6 @@ router.get('/analytics', (req, res) => {
             monthsArray,
             dailyArray
         };
-
-        if (!isFiltered) {
-            analyticsCache = result;
-            cacheTimestamp = now;
-        }
 
         res.json(result);
     });
@@ -151,11 +136,18 @@ const generateRandomAlphanumeric = (length) => {
     return result;
 };
 
-router.get('/next-order-number', (req, res) => {
+router.get('/next-order-number', authenticateJWT, (req, res) => {
     // Alternar de forma aleatoria entre longitudes de 6 y 7 caracteres
     const length = Math.random() < 0.5 ? 6 : 7;
+    let attempts = 0;
+    const maxAttempts = 10;
     
     const checkAndGenerate = () => {
+        attempts++;
+        if (attempts > maxAttempts) {
+            return res.status(500).json({ error: 'No se pudo generar un número de orden único tras varios intentos.' });
+        }
+        
         const candidate = generateRandomAlphanumeric(length);
         db.get("SELECT id FROM dispatches WHERE order_number = ?", [candidate], (err, row) => {
             if (err) {
@@ -174,7 +166,7 @@ router.get('/next-order-number', (req, res) => {
 });
 
 // Validar si un número de orden ya existe
-router.get('/check-order', (req, res) => {
+router.get('/check-order', authenticateJWT, (req, res) => {
     const { order_number, excludeId } = req.query;
     if (!order_number) {
         return res.status(400).json({ error: 'El número de orden es obligatorio para la validación.' });
@@ -197,7 +189,7 @@ router.get('/check-order', (req, res) => {
 });
 
 // GET all dispatches with optional date period filtering
-router.get('/', (req, res) => {
+router.get('/', authenticateJWT, (req, res) => {
     const { startDate, endDate } = req.query;
     let query = `
         SELECT d.*, c.name as client_name, c.rif as client_rif 
@@ -226,26 +218,28 @@ router.get('/', (req, res) => {
 });
 
 // POST register new dispatch
-router.post('/', (req, res) => {
+router.post('/', authenticateJWT, (req, res) => {
     const { 
         client_id, product_type, quantity_tm, 
         destination_state, dispatch_datetime, order_number, 
-        driver_name, license_plate, status, created_by 
+        driver_name, license_plate, status 
     } = req.body;
 
     if (!client_id || !product_type || !quantity_tm || !destination_state || !dispatch_datetime || !order_number) {
         return res.status(400).json({ error: 'Todos los campos obligatorios deben ser completados.' });
     }
 
+    const created_by = req.user.id; // Enforce user identity securely from JWT
+
     const query = `
         INSERT INTO dispatches 
-        (client_id, product_type, quantity_tm, destination_state, dispatch_datetime, order_number, driver_name, license_plate, status, created_by, createdAt)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now','localtime'))
+        (client_id, product_type, quantity_tm, destination_state, dispatch_datetime, order_number, driver_name, license_plate, status, created_by)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `;
     const params = [
         client_id, product_type, parseFloat(quantity_tm), 
         destination_state, dispatch_datetime, order_number, 
-        driver_name || null, license_plate || null, status || 'Despachado', created_by || null
+        driver_name || null, license_plate || null, status || 'Despachado', created_by
     ];
 
     db.run(query, params, function(err) {
@@ -257,7 +251,7 @@ router.post('/', (req, res) => {
         }
         invalidateCache();
         const ip = req.ip || req.connection.remoteAddress;
-        db.logAudit(created_by || req.headers['x-user-id'], 'DESPACHO_CREADO', `Se creó el despacho de orden "${order_number}" para el cliente ID ${client_id} (${quantity_tm} TM de ${product_type}).`, ip);
+        db.logAudit(created_by, 'DESPACHO_CREADO', `Se creó el despacho de orden "${order_number}" para el cliente ID ${client_id} (${quantity_tm} TM de ${product_type}).`, ip);
         res.json({ 
             id: this.lastID, client_id, product_type, quantity_tm, 
             destination_state, dispatch_datetime, order_number, driver_name, license_plate, status 
@@ -266,7 +260,7 @@ router.post('/', (req, res) => {
 });
 
 // PUT update existing dispatch
-router.put('/:id', (req, res) => {
+router.put('/:id', authenticateJWT, (req, res) => {
     const { 
         client_id, product_type, quantity_tm, 
         destination_state, dispatch_datetime, order_number, 
@@ -299,14 +293,14 @@ router.put('/:id', (req, res) => {
         }
         invalidateCache();
         const ip = req.ip || req.connection.remoteAddress;
-        const userId = req.headers['x-user-id'] || null;
+        const userId = req.user.id;
         db.logAudit(userId, 'DESPACHO_EDITADO', `Se actualizaron los datos del despacho ID ${req.params.id} (Orden "${order_number}", Cliente ID ${client_id}, ${quantity_tm} TM de ${product_type}).`, ip);
         res.json({ success: true, changes: this.changes });
     });
 });
 
 // PUT update only dispatch status
-router.put('/:id/status', (req, res) => {
+router.put('/:id/status', authenticateJWT, (req, res) => {
     const { status } = req.body;
     if (!status) return res.status(400).json({ error: 'El estatus es obligatorio.' });
 
@@ -314,24 +308,31 @@ router.put('/:id/status', (req, res) => {
         if (err) return res.status(500).json({ error: 'Error al actualizar estatus: ' + err.message });
         invalidateCache();
         const ip = req.ip || req.connection.remoteAddress;
-        const userId = req.headers['x-user-id'] || null;
+        const userId = req.user.id;
         db.logAudit(userId, 'DESPACHO_ESTADO_MODIFICADO', `Se modificó el estatus del despacho ID ${req.params.id} a "${status}".`, ip);
         res.json({ success: true, changes: this.changes, status });
     });
 });
 
 // DELETE dispatch record (Auditoría: Físico antes de 20 min, Anulación después de 20 min)
-router.delete('/:id', (req, res) => {
+router.delete('/:id', authenticateJWT, (req, res) => {
     const ip = req.ip || req.connection.remoteAddress;
-    const userId = req.headers['x-user-id'] || null;
+    const userId = req.user.id;
 
     db.get("SELECT order_number, createdAt FROM dispatches WHERE id = ?", [req.params.id], (err, row) => {
         if (err) return res.status(500).json({ error: 'Error al verificar despacho: ' + err.message });
         if (!row) return res.status(404).json({ error: 'Despacho no encontrado.' });
 
         const orderNum = row.order_number;
-        const createdLocalStr = row.createdAt ? row.createdAt.replace(' ', 'T') : null;
-        const createdDate = createdLocalStr ? new Date(createdLocalStr) : new Date();
+        let createdDate = new Date();
+        if (row.createdAt) {
+            if (row.createdAt instanceof Date) {
+                createdDate = row.createdAt;
+            } else {
+                const createdLocalStr = String(row.createdAt).replace(' ', 'T');
+                createdDate = new Date(createdLocalStr);
+            }
+        }
         const now = new Date();
         const diffMs = now - createdDate;
         const diffMins = diffMs / 1000 / 60;

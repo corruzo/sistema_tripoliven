@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Layers, Plus, Edit2, Trash2, ShieldAlert, ArrowLeft, ChevronLeft, ChevronRight, Package, Info } from 'lucide-react';
+import { Layers, Plus, Edit2, Trash2, ShieldAlert, ArrowLeft, ChevronLeft, ChevronRight, Package, X } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { API_BASE_URL } from './config';
 
@@ -13,10 +13,11 @@ const ProductTypes = () => {
   const [editId, setEditId] = useState(null);
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
+  const [status, setStatus] = useState('Activo');
 
   // Paginación
   const [currentPage, setCurrentPage] = useState(1);
-  const itemsPerPage = 12;
+  const itemsPerPage = 10;
 
   const totalPages = Math.ceil(productTypes.length / itemsPerPage);
   const indexOfLastItem = currentPage * itemsPerPage;
@@ -36,10 +37,10 @@ const ProductTypes = () => {
       const res = await fetch(`${API_BASE_URL}/api/product-types`);
       if (!res.ok) throw new Error('Error al obtener los tipos de producto.');
       const data = await res.json();
-      setProductTypes(data);
+      setProductTypes(data || []);
     } catch (err) {
       console.error(err);
-      setError('Error al conectar con el servidor. Mostrando catálogo local.');
+      setError('Error al conectar con el servidor. Mostrando catálogo local de contingencia.');
     } finally {
       setLoading(false);
     }
@@ -54,10 +55,12 @@ const ProductTypes = () => {
       setEditId(type.id);
       setName(type.name);
       setDescription(type.description || '');
+      setStatus(type.status || 'Activo');
     } else {
       setEditId(null);
       setName('');
       setDescription('');
+      setStatus('Activo');
     }
     setIsModalOpen(true);
   };
@@ -71,7 +74,7 @@ const ProductTypes = () => {
       return;
     }
 
-    const payload = { name: name.trim(), description: description.trim() };
+    const payload = { name: name.trim(), description: description.trim(), status };
     const url = editId 
       ? `${API_BASE_URL}/api/product-types/${editId}` 
       : `${API_BASE_URL}/api/product-types`;
@@ -97,6 +100,31 @@ const ProductTypes = () => {
     }
   };
 
+  const handleToggleStatus = async (type) => {
+    const newStatus = type.status === 'Inactivo' ? 'Activo' : 'Inactivo';
+    const payload = { 
+      name: type.name, 
+      description: type.description || '', 
+      status: newStatus 
+    };
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/product-types/${type.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      if (res.ok) {
+        loadProductTypes();
+      } else {
+        const data = await res.json();
+        alert(data.error || 'Error al cambiar el estado del tipo de producto.');
+      }
+    } catch (err) {
+      console.error(err);
+      alert('Error de conexión al cambiar el estado.');
+    }
+  };
+
   const handleDelete = async (id, typeName) => {
     if (!window.confirm(`¿Seguro que deseas eliminar el tipo de producto "${typeName}"? Las órdenes de despacho existentes mantendrán su clasificación, pero ya no aparecerá para nuevos registros.`)) return;
     
@@ -113,8 +141,6 @@ const ProductTypes = () => {
       alert('Error al conectar con el servidor.');
     }
   };
-
-  const palette = ['#3b82f6', '#10b981', '#f59e0b', '#ec4899', '#8b5cf6', '#06b6d4'];
 
   return (
     <div style={{ zIndex: 1, position: 'relative' }}>
@@ -170,130 +196,140 @@ const ProductTypes = () => {
         </div>
       )}
 
-      {/* CATÁLOGO DE PRODUCTOS (GRID) */}
-      {loading ? (
-        <div style={{ padding: '60px', textAlign: 'center', color: 'var(--text-secondary)', fontSize: '1.1rem' }}>
-          Cargando catálogo de productos...
+      {/* TABLA DE PRODUCTOS */}
+      <div className="table-container">
+        <div className="table-header">
+          <h2 style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '1.25rem', fontWeight: '700', color: 'var(--text-primary)' }}>
+            <Package size={20} color="var(--accent-primary)" />
+            Catálogo y Disponibilidad de Productos
+          </h2>
         </div>
-      ) : productTypes.length === 0 ? (
-        <div className="card" style={{ padding: '80px', textAlign: 'center', color: 'var(--text-secondary)', borderRadius: '24px' }}>
-          <Package size={48} style={{ opacity: 0.3, margin: '0 auto 16px auto', display: 'block' }} />
-          <h3 style={{ fontSize: '1.2rem', fontWeight: '700', color: 'var(--text-primary)', marginBottom: '8px' }}>Sin Clasificaciones Registradas</h3>
-          <p style={{ maxWidth: '400px', margin: '0 auto', fontSize: '0.95rem' }}>No hay tipos de producto en el sistema. Haz clic en "Nuevo Tipo de Producto" para crear tu primera categoría.</p>
-        </div>
-      ) : (
-        <>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '24px', marginBottom: '36px' }}>
-            {currentProductTypes.map((t, idx) => {
-              const dotColor = palette[idx % palette.length];
-              return (
-                <div 
-                  key={t.id} 
-                  className="card" 
-                  style={{ 
-                    padding: '28px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', 
-                    minHeight: '200px', borderRadius: '20px', transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-                    border: '1px solid var(--glass-border)'
-                  }}
-                >
-                  <div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '16px' }}>
-                      <span style={{ width: '12px', height: '12px', borderRadius: '6px', background: dotColor, boxShadow: `0 0 10px ${dotColor}` }}></span>
-                      <h3 style={{ fontSize: '1.25rem', fontWeight: '700', margin: 0, color: 'var(--text-primary)' }}>{t.name}</h3>
-                    </div>
-                    <p style={{ color: 'var(--text-secondary)', fontSize: '0.95rem', margin: '0 0 24px 0', lineHeight: '1.6' }}>
-                      {t.description || <span style={{ fontStyle: 'italic', opacity: 0.6 }}>Sin descripción específica registrada</span>}
-                    </p>
-                  </div>
 
-                  <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', borderTop: '1px solid var(--glass-border)', paddingTop: '16px' }}>
-                    <button 
-                      onClick={() => handleOpenModal(t)}
-                      style={{
-                        background: 'var(--bg-tertiary)', border: '1px solid var(--glass-border)', color: 'var(--text-primary)', 
-                        padding: '8px 16px', borderRadius: '10px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', 
-                        fontSize: '0.85rem', fontWeight: '600', transition: 'all 0.2s'
-                      }}
-                      onMouseOver={e => { e.currentTarget.style.borderColor = 'var(--accent-primary)'; e.currentTarget.style.color = 'var(--accent-primary)'; }}
-                      onMouseOut={e => { e.currentTarget.style.borderColor = 'var(--glass-border)'; e.currentTarget.style.color = 'var(--text-primary)'; }}
-                    >
-                      <Edit2 size={14} /> Editar
-                    </button>
-                    <button 
-                      onClick={() => handleDelete(t.id, t.name)}
-                      style={{
-                        background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.2)', color: '#ef4444', 
-                        padding: '8px 16px', borderRadius: '10px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', 
-                        fontSize: '0.85rem', fontWeight: '600', transition: 'all 0.2s'
-                      }}
-                      onMouseOver={e => { e.currentTarget.style.background = '#ef4444'; e.currentTarget.style.color = '#ffffff'; }}
-                      onMouseOut={e => { e.currentTarget.style.background = 'rgba(239, 68, 68, 0.1)'; e.currentTarget.style.color = '#ef4444'; }}
-                    >
-                      <Trash2 size={14} /> Eliminar
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
+        {loading ? (
+          <div style={{ padding: '60px', textAlign: 'center', color: 'var(--text-secondary)', fontSize: '1.1rem' }}>
+            Cargando catálogo de productos...
           </div>
+        ) : productTypes.length === 0 ? (
+          <div style={{ padding: '80px', textAlign: 'center', color: 'var(--text-secondary)' }}>
+            <Package size={48} style={{ opacity: 0.3, margin: '0 auto 16px auto', display: 'block' }} />
+            <h3 style={{ fontSize: '1.2rem', fontWeight: '700', color: 'var(--text-primary)', marginBottom: '8px' }}>Sin Clasificaciones Registradas</h3>
+            <p style={{ maxWidth: '400px', margin: '0 auto', fontSize: '0.95rem' }}>No hay tipos de producto en el sistema. Haz clic en "Nuevo Tipo de Producto" para crear tu primera categoría.</p>
+          </div>
+        ) : (
+          <>
+            <table className="modern-table">
+              <thead>
+                <tr>
+                  <th>ID</th>
+                  <th>NOMBRE DE CLASIFICACIÓN</th>
+                  <th>DESCRIPCIÓN / NOTAS DE USO</th>
+                  <th>ESTADO</th>
+                  <th>ACCIONES</th>
+                </tr>
+              </thead>
+              <tbody>
+                {currentProductTypes.map(t => (
+                  <tr key={t.id}>
+                    <td><span style={{ color: 'var(--text-secondary)' }}>#{t.id}</span></td>
+                    <td><span style={{ fontWeight: 700, color: 'var(--text-primary)' }}>{t.name}</span></td>
+                    <td>
+                      <span style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>
+                        {t.description || <span style={{ fontStyle: 'italic', opacity: 0.5 }}>Sin descripción específica registrada</span>}
+                      </span>
+                    </td>
+                    <td>
+                      <span 
+                        className={`status-badge ${t.status === 'Inactivo' ? 'status-inactive' : 'status-active'}`}
+                        style={{ cursor: 'pointer', userSelect: 'none', transition: 'all 0.2s' }}
+                        title="Haga clic para alternar el estado de disponibilidad"
+                        onClick={() => handleToggleStatus(t)}
+                      >
+                        {t.status || 'Activo'}
+                      </span>
+                    </td>
+                    <td>
+                      <div style={{ display: 'flex', gap: '8px' }}>
+                        <button style={{
+                          background: 'transparent', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', padding: '8px', borderRadius: '8px', transition: 'all 0.2s'
+                        }}
+                        onClick={() => handleOpenModal(t)}
+                        onMouseOver={e => { e.currentTarget.style.color = 'white'; e.currentTarget.style.background = 'rgba(255,255,255,0.05)'; }}
+                        onMouseOut={e => { e.currentTarget.style.color = 'var(--text-secondary)'; e.currentTarget.style.background = 'transparent'; }}>
+                          <Edit2 size={16} />
+                        </button>
+                        <button style={{
+                          background: 'transparent', border: 'none', color: 'var(--danger)', cursor: 'pointer', padding: '8px', borderRadius: '8px', transition: 'all 0.2s'
+                        }}
+                        onClick={() => handleDelete(t.id, t.name)}
+                        onMouseOver={e => { e.currentTarget.style.background = 'rgba(239, 68, 68, 0.1)'; }}
+                        onMouseOut={e => { e.currentTarget.style.background = 'transparent'; }}>
+                          <Trash2 size={16} />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
 
-          {/* BARRA DE PAGINACIÓN */}
-          {totalPages > 1 && (
-            <div className="card" style={{
-              display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px',
-              padding: '20px 28px', borderRadius: '20px', marginBottom: '36px', border: '1px solid var(--glass-border)'
-            }}>
-              <div style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>
-                Mostrando <span style={{ color: 'var(--text-primary)', fontWeight: '700' }}>{indexOfFirstItem + 1}</span> a <span style={{ color: 'var(--text-primary)', fontWeight: '700' }}>{Math.min(indexOfLastItem, productTypes.length)}</span> de <span style={{ color: 'var(--text-primary)', fontWeight: '700' }}>{productTypes.length}</span> registros
-              </div>
-              
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <button
-                  disabled={currentPage === 1}
-                  onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
-                  style={{
-                    background: currentPage === 1 ? 'transparent' : 'var(--glass-bg)',
-                    border: '1px solid var(--glass-border)', color: currentPage === 1 ? 'var(--text-secondary)' : 'var(--text-primary)',
-                    width: '40px', height: '40px', borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    cursor: currentPage === 1 ? 'not-allowed' : 'pointer', transition: 'all 0.2s', opacity: currentPage === 1 ? 0.4 : 1
-                  }}
-                >
-                  <ChevronLeft size={18} />
-                </button>
-
-                {Array.from({ length: totalPages }, (_, i) => i + 1).map(page => (
+            {/* BARRA DE PAGINACIÓN */}
+            {totalPages > 1 && (
+              <div style={{
+                display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px',
+                padding: '20px 28px', borderTop: '1px solid var(--glass-border)', background: 'rgba(255, 255, 255, 0.01)'
+              }}>
+                <div style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>
+                  Mostrando <span style={{ color: 'var(--text-primary)', fontWeight: '700' }}>{indexOfFirstItem + 1}</span> a <span style={{ color: 'var(--text-primary)', fontWeight: '700' }}>{Math.min(indexOfLastItem, productTypes.length)}</span> de <span style={{ color: 'var(--text-primary)', fontWeight: '700' }}>{productTypes.length}</span> registros
+                </div>
+                
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                   <button
-                    key={page}
-                    onClick={() => setCurrentPage(page)}
+                    disabled={currentPage === 1}
+                    onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
                     style={{
-                      background: currentPage === page ? 'var(--accent-gradient)' : 'var(--glass-bg)',
-                      border: currentPage === page ? 'none' : '1px solid var(--glass-border)',
-                      color: currentPage === page ? '#ffffff' : 'var(--text-primary)', fontWeight: '700', 
-                      width: '40px', height: '40px', borderRadius: '12px', cursor: 'pointer', transition: 'all 0.2s',
-                      boxShadow: currentPage === page ? '0 4px 12px rgba(37, 99, 235, 0.3)' : 'none'
+                      background: currentPage === 1 ? 'transparent' : 'var(--glass-bg)',
+                      border: '1px solid var(--glass-border)', color: currentPage === 1 ? 'var(--text-secondary)' : 'var(--text-primary)',
+                      width: '40px', height: '40px', borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      cursor: currentPage === 1 ? 'not-allowed' : 'pointer', transition: 'all 0.2s', opacity: currentPage === 1 ? 0.4 : 1
                     }}
                   >
-                    {page}
+                    <ChevronLeft size={18} />
                   </button>
-                ))}
 
-                <button
-                  disabled={currentPage === totalPages}
-                  onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
-                  style={{
-                    background: currentPage === totalPages ? 'transparent' : 'var(--glass-bg)',
-                    border: '1px solid var(--glass-border)', color: currentPage === totalPages ? 'var(--text-secondary)' : 'var(--text-primary)',
-                    width: '40px', height: '40px', borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    cursor: currentPage === totalPages ? 'not-allowed' : 'pointer', transition: 'all 0.2s', opacity: currentPage === totalPages ? 0.4 : 1
-                  }}
-                >
-                  <ChevronRight size={18} />
-                </button>
+                  {Array.from({ length: totalPages }, (_, i) => i + 1).map(page => (
+                    <button
+                      key={page}
+                      onClick={() => setCurrentPage(page)}
+                      style={{
+                        background: currentPage === page ? 'var(--accent-gradient)' : 'var(--glass-bg)',
+                        border: currentPage === page ? 'none' : '1px solid var(--glass-border)',
+                        color: currentPage === page ? '#ffffff' : 'var(--text-primary)', fontWeight: '700', 
+                        width: '40px', height: '40px', borderRadius: '12px', cursor: 'pointer', transition: 'all 0.2s',
+                        boxShadow: currentPage === page ? '0 4px 12px rgba(37, 99, 235, 0.3)' : 'none'
+                      }}
+                    >
+                      {page}
+                    </button>
+                  ))}
+
+                  <button
+                    disabled={currentPage === totalPages}
+                    onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                    style={{
+                      background: currentPage === totalPages ? 'transparent' : 'var(--glass-bg)',
+                      border: '1px solid var(--glass-border)', color: currentPage === totalPages ? 'var(--text-secondary)' : 'var(--text-primary)',
+                      width: '40px', height: '40px', borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      cursor: currentPage === totalPages ? 'not-allowed' : 'pointer', transition: 'all 0.2s', opacity: currentPage === totalPages ? 0.4 : 1
+                    }}
+                  >
+                    <ChevronRight size={18} />
+                  </button>
+                </div>
               </div>
-            </div>
-          )}
-        </>
-      )}
+            )}
+          </>
+        )}
+      </div>
 
       {/* VENTANA MODAL CRUD */}
       {isModalOpen && (
@@ -304,14 +340,28 @@ const ProductTypes = () => {
         }}>
           <div className="card" style={{
             width: '100%', maxWidth: '500px', padding: '36px', borderRadius: '24px',
-            border: '1px solid var(--glass-border)', boxShadow: '0 25px 50px -12px rgba(0,0,0,0.5)'
+            border: '1px solid var(--glass-border)', boxShadow: '0 25px 50px -12px rgba(0,0,0,0.5)',
+            background: 'var(--bg-secondary)'
           }}>
-            <h2 style={{ fontSize: '1.4rem', fontWeight: '800', marginBottom: '28px', display: 'flex', alignItems: 'center', gap: '12px', color: 'var(--text-primary)' }}>
-              <div style={{ padding: '8px', borderRadius: '10px', background: 'var(--accent-gradient)', color: 'white' }}>
-                <Layers size={22} />
-              </div>
-              {editId ? 'Editar Tipo de Producto' : 'Nuevo Tipo de Producto'}
-            </h2>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '28px' }}>
+              <h2 style={{ fontSize: '1.4rem', fontWeight: '800', display: 'flex', alignItems: 'center', gap: '12px', color: 'var(--text-primary)', margin: 0 }}>
+                <div style={{ padding: '8px', borderRadius: '10px', background: 'var(--accent-gradient)', color: 'white' }}>
+                  <Layers size={22} />
+                </div>
+                {editId ? 'Editar Tipo de Producto' : 'Nuevo Tipo de Producto'}
+              </h2>
+              <button 
+                onClick={() => setIsModalOpen(false)} 
+                style={{ 
+                  background: 'transparent', border: 'none', color: 'var(--text-secondary)', 
+                  cursor: 'pointer', transition: 'color 0.2s' 
+                }}
+                onMouseOver={e => e.currentTarget.style.color = 'white'}
+                onMouseOut={e => e.currentTarget.style.color = 'var(--text-secondary)'}
+              >
+                <X size={24} />
+              </button>
+            </div>
 
             <form onSubmit={handleSave}>
               <div style={{ marginBottom: '20px' }}>
@@ -332,7 +382,7 @@ const ProductTypes = () => {
                 />
               </div>
 
-              <div style={{ marginBottom: '32px' }}>
+              <div style={{ marginBottom: '20px' }}>
                 <label style={{ display: 'block', marginBottom: '8px', color: 'var(--text-secondary)', fontSize: '0.9rem', fontWeight: '600' }}>Descripción / Notas de Uso</label>
                 <textarea 
                   rows="3"
@@ -347,6 +397,24 @@ const ProductTypes = () => {
                   onFocus={e => e.currentTarget.style.borderColor = 'var(--accent-primary)'}
                   onBlur={e => e.currentTarget.style.borderColor = 'var(--glass-border)'}
                 />
+              </div>
+
+              <div style={{ marginBottom: '32px' }}>
+                <label style={{ display: 'block', marginBottom: '8px', color: 'var(--text-secondary)', fontSize: '0.9rem', fontWeight: '600' }}>Estado de Disponibilidad</label>
+                <select
+                  value={status}
+                  onChange={e => setStatus(e.target.value)}
+                  style={{ 
+                    width: '100%', padding: '14px 16px', borderRadius: '14px', background: 'var(--bg-tertiary)', 
+                    border: '1px solid var(--glass-border)', color: 'var(--text-primary)', fontFamily: 'inherit', fontSize: '0.95rem',
+                    outline: 'none', transition: 'border 0.2s', fontWeight: '700'
+                  }}
+                  onFocus={e => e.currentTarget.style.borderColor = 'var(--accent-primary)'}
+                  onBlur={e => e.currentTarget.style.borderColor = 'var(--glass-border)'}
+                >
+                  <option value="Activo">Activo (Disponible para nuevos despachos)</option>
+                  <option value="Inactivo">Inactivo (No seleccionable en nuevos despachos)</option>
+                </select>
               </div>
 
               <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>

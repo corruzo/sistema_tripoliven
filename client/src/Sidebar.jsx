@@ -3,7 +3,7 @@ import { NavLink } from 'react-router-dom';
 import { 
   LayoutDashboard, Users, Briefcase, Building2, Settings, Hexagon, 
   Truck, Layers, ChevronDown, ChevronRight, ChevronLeft, Contact, TrendingUp,
-  Scale, Menu
+  Scale, Menu, FileText
 } from 'lucide-react';
 
 const Sidebar = () => {
@@ -63,7 +63,7 @@ const Sidebar = () => {
         display: 'flex', 
         alignItems: 'center', 
         justifyContent: isCollapsed ? 'center' : 'space-between',
-        padding: '20px 14px', 
+        padding: '4px 8px', 
         borderBottom: '1px solid var(--glass-border)',
         height: '70px',
         position: 'relative'
@@ -106,7 +106,7 @@ const Sidebar = () => {
           }}
           title={isCollapsed ? 'Expandir menú lateral' : 'Colapsar menú lateral'}
         >
-          {isCollapsed ? <ChevronRight size={18} /> : <ChevronLeft size={18} />}
+          {isCollapsed ? <ChevronRight size={14} /> : <ChevronLeft size={14} />}
         </button>
       </div>
 
@@ -129,7 +129,7 @@ const Sidebar = () => {
                   display: 'flex', justifyContent: 'space-between', alignItems: 'center',
                   fontSize: '0.675rem', fontWeight: '700', color: 'var(--text-secondary)',
                   textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '6px', 
-                  padding: '6px 12px', borderRadius: '8px', cursor: 'pointer', transition: 'background 0.2s',
+                  padding: '4px 8px', borderRadius: '8px', cursor: 'pointer', transition: 'background 0.2s',
                   userSelect: 'none'
                 }}
                 onMouseEnter={e => e.currentTarget.style.background = 'rgba(255, 255, 255, 0.03)'}
@@ -149,14 +149,8 @@ const Sidebar = () => {
                 <ul className="nav-menu" style={{ listStyle: 'none', padding: 0, margin: 0, paddingLeft: '4px' }}>
                   <li>
                     <NavLink to="/" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`} end>
-                      <LayoutDashboard size={16} />
+                      <LayoutDashboard size={14} />
                       <span>Dashboard Principal</span>
-                    </NavLink>
-                  </li>
-                  <li>
-                    <NavLink to="/dispatches/analytics" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
-                      <TrendingUp size={16} />
-                      <span>Métricas & Analíticas</span>
                     </NavLink>
                   </li>
                 </ul>
@@ -171,7 +165,7 @@ const Sidebar = () => {
                   display: 'flex', justifyContent: 'space-between', alignItems: 'center',
                   fontSize: '0.675rem', fontWeight: '700', color: 'var(--text-secondary)',
                   textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '6px', 
-                  padding: '6px 12px', borderRadius: '8px', cursor: 'pointer', transition: 'background 0.2s',
+                  padding: '4px 8px', borderRadius: '8px', cursor: 'pointer', transition: 'background 0.2s',
                   userSelect: 'none'
                 }}
                 onMouseEnter={e => e.currentTarget.style.background = 'rgba(255, 255, 255, 0.03)'}
@@ -191,20 +185,26 @@ const Sidebar = () => {
                 <ul className="nav-menu" style={{ listStyle: 'none', padding: 0, margin: 0, paddingLeft: '4px' }}>
                   <li>
                     <NavLink to="/dispatches" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
-                      <Truck size={16} />
+                      <Truck size={14} />
                       <span>Despacho de Órdenes</span>
                     </NavLink>
                   </li>
                   <li>
                     <NavLink to="/clients" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
-                      <Contact size={16} />
+                      <Contact size={14} />
                       <span>Clientes</span>
                     </NavLink>
                   </li>
                   <li>
                     <NavLink to="/product-types" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
-                      <Layers size={16} />
+                      <Layers size={14} />
                       <span>Productos</span>
+                    </NavLink>
+                  </li>
+                  <li>
+                    <NavLink to="/reports" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
+                      <FileText size={14} />
+                      <span>Reportes y Análisis</span>
                     </NavLink>
                   </li>
                 </ul>
@@ -219,7 +219,7 @@ const Sidebar = () => {
                   display: 'flex', justifyContent: 'space-between', alignItems: 'center',
                   fontSize: '0.675rem', fontWeight: '700', color: 'var(--text-secondary)',
                   textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '6px', 
-                  padding: '6px 12px', borderRadius: '8px', cursor: 'pointer', transition: 'background 0.2s',
+                  padding: '4px 8px', borderRadius: '8px', cursor: 'pointer', transition: 'background 0.2s',
                   userSelect: 'none'
                 }}
                 onMouseEnter={e => e.currentTarget.style.background = 'rgba(255, 255, 255, 0.03)'}
@@ -239,19 +239,19 @@ const Sidebar = () => {
                 <ul className="nav-menu" style={{ listStyle: 'none', padding: 0, margin: 0, paddingLeft: '4px' }}>
                   <li>
                     <NavLink to="/departments" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
-                      <Building2 size={16} />
+                      <Building2 size={14} />
                       <span>Departamentos</span>
                     </NavLink>
                   </li>
                   <li>
                     <NavLink to="/positions" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
-                      <Briefcase size={16} />
+                      <Briefcase size={14} />
                       <span>Cargos Internos</span>
                     </NavLink>
                   </li>
                   <li>
                     <NavLink to="/users" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
-                      <Users size={16} />
+                      <Users size={14} />
                       <span>Personal (Usuarios)</span>
                     </NavLink>
                   </li>
@@ -264,42 +264,37 @@ const Sidebar = () => {
           <ul className="nav-menu" style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: '8px', alignItems: 'center' }}>
             <li>
               <NavLink to="/" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`} data-tooltip="Dashboard Principal" end>
-                <LayoutDashboard size={18} />
-              </NavLink>
-            </li>
-            <li>
-              <NavLink to="/dispatches/analytics" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`} data-tooltip="Métricas & Analíticas">
-                <TrendingUp size={18} />
+                <LayoutDashboard size={14} />
               </NavLink>
             </li>
             <li>
               <NavLink to="/dispatches" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`} data-tooltip="Despacho de Órdenes">
-                <Truck size={18} />
+                <Truck size={14} />
               </NavLink>
             </li>
             <li>
               <NavLink to="/clients" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`} data-tooltip="Clientes">
-                <Contact size={18} />
+                <Contact size={14} />
               </NavLink>
             </li>
             <li>
               <NavLink to="/product-types" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`} data-tooltip="Productos">
-                <Layers size={18} />
+                <Layers size={14} />
               </NavLink>
             </li>
             <li>
               <NavLink to="/departments" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`} data-tooltip="Departamentos">
-                <Building2 size={18} />
+                <Building2 size={14} />
               </NavLink>
             </li>
             <li>
               <NavLink to="/positions" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`} data-tooltip="Cargos Internos">
-                <Briefcase size={18} />
+                <Briefcase size={14} />
               </NavLink>
             </li>
             <li>
               <NavLink to="/users" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`} data-tooltip="Personal (Usuarios)">
-                <Users size={18} />
+                <Users size={14} />
               </NavLink>
             </li>
           </ul>
@@ -316,26 +311,31 @@ const Sidebar = () => {
             <ul className="nav-menu" style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: '8px', alignItems: 'center' }}>
               <li>
                 <NavLink to="/legal" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`} data-tooltip="Marco Legal & IP">
-                  <Scale size={18} />
+                  <Scale size={14} />
                 </NavLink>
               </li>
               <li>
                 <NavLink to="/settings" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`} data-tooltip="Configuración del ERP">
-                  <Settings size={18} />
+                  <Settings size={14} />
                 </NavLink>
               </li>
-            </ul>
+            <li>
+  <NavLink to="/reports" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`} data-tooltip="Reportes">
+    <FileText size={14} />
+  </NavLink>
+</li>
+</ul>
           ) : (
             <ul className="nav-menu" style={{ listStyle: 'none', padding: 0, margin: 0, paddingLeft: '4px' }}>
               <li>
                 <NavLink to="/legal" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
-                  <Scale size={16} />
+                  <Scale size={14} />
                   <span>Marco Legal & IP</span>
                 </NavLink>
               </li>
               <li>
                 <NavLink to="/settings" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
-                  <Settings size={16} />
+                  <Settings size={14} />
                   <span>Configuración</span>
                 </NavLink>
               </li>

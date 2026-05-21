@@ -10,7 +10,7 @@ import Departments from './Departments';
 import Positions from './Positions';
 import Dispatches from './Dispatches';
 import DispatchForm from './DispatchForm';
-import DispatchAnalytics from './DispatchAnalytics';
+import Reports from './Reports';
 import ProductTypes from './ProductTypes';
 import Clients from './Clients';
 import Login from './Login';
@@ -27,10 +27,10 @@ function App() {
   // (Rest of the state and hooks unchanged...)
 
 
-  // Health check para el servidor
+  // Health check para el servidor (ligero y eficiente)
   const checkServerStatus = async () => {
     try {
-      const res = await fetch(`${API_BASE_URL}/api/dashboard/stats`, { method: 'GET' });
+      const res = await fetch(`${API_BASE_URL}/api/health`, { method: 'GET' });
       if (res.ok) {
         setIsServerOnline(true);
       } else {
@@ -65,9 +65,9 @@ function App() {
     }
     setLoading(false);
 
-    // Ejecutar primer ping y programar intervalo de revisión cada 6 segundos
+    // Ejecutar primer ping y programar intervalo de revisión cada 15 segundos (optimizado)
     checkServerStatus();
-    const interval = setInterval(checkServerStatus, 6000);
+    const interval = setInterval(checkServerStatus, 15000);
     return () => clearInterval(interval);
   }, []);
 
@@ -143,9 +143,10 @@ function App() {
     return () => clearInterval(sessionTimer);
   }, [currentUser]);
 
-  const handleLoginSuccess = (user) => {
+  const handleLoginSuccess = (user, token) => {
     const now = Date.now().toString();
     localStorage.setItem('tripoliven_user', JSON.stringify(user));
+    localStorage.setItem('tripoliven_token', token);
     localStorage.setItem('tripoliven_login_time', now);
     localStorage.setItem('tripoliven_last_active', now);
     setCurrentUser(user);
@@ -155,6 +156,7 @@ function App() {
   const performLogout = (force = false) => {
     if (force || window.confirm('¿Seguro que deseas cerrar tu sesión?')) {
       localStorage.removeItem('tripoliven_user');
+      localStorage.removeItem('tripoliven_token');
       localStorage.removeItem('tripoliven_last_active');
       localStorage.removeItem('tripoliven_login_time');
       setCurrentUser(null);
@@ -312,9 +314,9 @@ function App() {
             <Route path="/dispatches" element={<Dispatches />} />
             <Route path="/dispatches/new" element={<DispatchForm />} />
             <Route path="/dispatches/edit/:id" element={<DispatchForm />} />
-            <Route path="/dispatches/analytics" element={<DispatchAnalytics />} />
             <Route path="/product-types" element={<ProductTypes />} />
             <Route path="/clients" element={<Clients />} />
+            <Route path="/reports" element={<Reports />} />
             <Route path="/legal" element={<Legal />} />
             <Route path="/settings" element={<SystemControl />} />
           </Routes>

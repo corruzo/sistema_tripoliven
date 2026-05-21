@@ -1,3 +1,4 @@
+require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const morgan = require('morgan');
@@ -19,7 +20,27 @@ const app = express();
 const PORT = process.env.PORT || 4000;
 
 // Middlewares Globales
-app.use(cors());
+const corsOptions = {
+    origin: function (origin, callback) {
+        // Permitir solicitudes sin origen (como peticiones directas de Electron en prod, curl o apps locales)
+        if (!origin) return callback(null, true);
+        
+        // Permitir loopback local, file://, app:// o bloques de red privada LAN comunes (RFC 1918)
+        const isLocal = origin.startsWith('http://localhost') ||
+                        origin.startsWith('http://127.0.0.1') ||
+                        origin.startsWith('file://') ||
+                        origin.startsWith('app://') ||
+                        /^http:\/\/(192\.168\.\d+\.\d+|10\.\d+\.\d+\.\d+|172\.(1[6-9]|2\d|3[0-1])\.\d+\.\d+)(:\d+)?$/.test(origin);
+                        
+        if (isLocal) {
+            callback(null, true);
+        } else {
+            callback(new Error('Acceso denegado por política CORS de Tripoliven.'));
+        }
+    },
+    credentials: true
+};
+app.use(cors(corsOptions));
 app.use(compression()); // Compresión GZIP para optimizar transferencia de red (JSON pesado)
 if (process.env.NODE_ENV !== 'production') {
     app.use(morgan('dev')); // Solo registrar logs en consola durante desarrollo para evitar bloquear el event loop
@@ -36,11 +57,16 @@ app.use('/api/product-types', productTypesRouter);
 app.use('/api/clients', clientsRouter);
 app.use('/api/system', systemRouter);
 
-// Ruta de compatibilidad para peticiones directas de login antiguo
+// Ruta de comprobación de salud del servidor (Health Check) súper ligera
+app.get('/api/health', (req, res) => {
+    res.json({ status: "ok" });
+});
+
+// Ruta de compatibilidad para clientes antiguos (login heredado)
 app.post('/api/login', (req, res, next) => {
     req.url = '/login';
     authRouter(req, res, next);
-}); 
+});
 
 // =======================
 // ESTADÍSTICAS DEL PANEL (DASHBOARD STATS)
@@ -54,8 +80,9 @@ app.get('/api/dashboard/stats', (req, res, next) => {
         const statsRows = rows || [];
         statsRows.forEach(row => {
             if (row) {
-                if (row.status === 'Activo') active = row.count;
-                if (row.status === 'Inactivo') inactive = row.count;
+                const countVal = parseInt(row.count, 10) || 0;
+                if (row.status === 'Activo') active = countVal;
+                if (row.status === 'Inactivo') inactive = countVal;
             }
         });
 
@@ -107,13 +134,13 @@ const logCrash = (errorType, err) => {
 
 process.on('uncaughtException', (err) => {
     logCrash('Uncaught Exception', err);
-    // El proceso se mantiene vivo de forma segura
+    process.exit(1); // Finalizar de forma limpia para evitar un estado zombi inconsistente
 });
 
 process.on('unhandledRejection', (reason, promise) => {
     const err = reason instanceof Error ? reason : new Error(String(reason));
     logCrash('Unhandled Rejection', err);
-    // El proceso se mantiene vivo de forma segura
+    process.exit(1); // Finalizar de forma limpia para evitar un estado zombi inconsistente
 });
 
 // Middleware 404 para rutas no encontradas

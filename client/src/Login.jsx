@@ -24,7 +24,7 @@ const Login = ({ onLoginSuccess }) => {
       setLoading(false);
 
       if (res.ok && data.success) {
-        onLoginSuccess(data.user);
+        onLoginSuccess(data.user, data.token);
       } else {
         setError(data.error || 'Credenciales inválidas.');
       }

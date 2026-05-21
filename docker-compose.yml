@@ -1,7 +1,26 @@
 version: '3.8'
 
 services:
-  # Servidor Backend (Express + SQLite)
+  # Base de Datos de Producción (PostgreSQL)
+  postgres:
+    image: postgres:15-alpine
+    container_name: tripoliven_postgres
+    environment:
+      POSTGRES_DB: tripoliven_db
+      POSTGRES_USER: tripoliven_admin
+      POSTGRES_PASSWORD: tripoliven_secure_pwd_2026
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U tripoliven_admin -d tripoliven_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: always
+
+  # Servidor Backend (Express + PostgreSQL)
   backend:
     build:
       context: ./server
@@ -9,12 +28,18 @@ services:
     container_name: tripoliven_backend
     ports:
       - "4000:4000"
-    volumes:
-      # Volumen persistente para que la base de datos no se pierda al apagar el contenedor
-      - tripoliven_db_data:/app/database
     environment:
       - NODE_ENV=production
       - PORT=4000
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_USER=tripoliven_admin
+      - DB_PASSWORD=tripoliven_secure_pwd_2026
+      - DB_NAME=tripoliven_db
+      - JWT_SECRET=tripoliven_secret_key_de_alta_seguridad_2026
+    depends_on:
+      postgres:
+        condition: service_healthy
     restart: always
 
   # Interfaz Frontend (React + Nginx)
@@ -30,5 +55,5 @@ services:
     restart: always
 
 volumes:
-  # Definición del volumen persistente para SQLite
-  tripoliven_db_data:
+  # Volumen persistente para PostgreSQL
+  postgres_data:

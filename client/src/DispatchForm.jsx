@@ -59,18 +59,18 @@ export default function DispatchForm() {
 
     useEffect(() => {
         const init = async () => {
-            await Promise.all([loadProductTypes(), loadClients()]);
-            
             if (isEdit) {
-                await loadDispatch();
+                const currentProduct = await loadDispatch();
+                await Promise.all([loadProductTypes(currentProduct), loadClients()]);
             } else {
+                await Promise.all([loadProductTypes(), loadClients()]);
                 await generateDefaults();
                 // Check borrador al iniciar un nuevo despacho
                 const draftStr = localStorage.getItem('tripoliven_dispatch_draft');
                 if (draftStr) {
                     try {
                         const draft = JSON.parse(draftStr);
-                        if (draft && draft.formData && (draft.formData.client_id || draft.formData.quantity_tm || draft.formData.driver_name || draft.formData.license_plate)) {
+                        if (draft && draft.formData && (draft.formData.client_id || draft.formData.quantity_tm || draft.formData.driver_name || draft.formData.license_plate || draft.formData.order_number)) {
                             setSavedDraftData(draft);
                             setShowDraftBanner(true);
                         }
@@ -92,13 +92,14 @@ export default function DispatchForm() {
     // Guardado automático en localStorage al realizar cambios en un formulario nuevo
     useEffect(() => {
         if (!isEdit && !loading && !isRestoringRef.current) {
-            if (formData.client_id || formData.quantity_tm || formData.driver_name || formData.license_plate) {
+            if (formData.client_id || formData.quantity_tm || formData.driver_name || formData.license_plate || formData.order_number) {
                 const draftObj = {
                     formData: {
                         client_id: formData.client_id,
                         product_type: formData.product_type,
                         quantity_tm: formData.quantity_tm,
                         destination_state: formData.destination_state,
+                        order_number: formData.order_number,
                         driver_name: formData.driver_name,
                         license_plate: formData.license_plate,
                         status: formData.status
@@ -133,6 +134,7 @@ export default function DispatchForm() {
                 product_type: savedDraftData.formData.product_type || prev.product_type,
                 quantity_tm: savedDraftData.formData.quantity_tm || '',
                 destination_state: savedDraftData.formData.destination_state || prev.destination_state,
+                order_number: savedDraftData.formData.order_number || prev.order_number,
                 driver_name: savedDraftData.formData.driver_name || '',
                 license_plate: savedDraftData.formData.license_plate || '',
                 status: savedDraftData.formData.status || 'Despachado'
@@ -154,14 +156,15 @@ export default function DispatchForm() {
         setSavedDraftData(null);
     };
 
-    const loadProductTypes = async () => {
+    const loadProductTypes = async (currentProductType) => {
         try {
             const res = await fetch(`${API_BASE_URL}/api/product-types`);
             if (res.ok) {
                 const data = await res.json();
-                setProductTypes(data);
-                if (!isEdit && data.length > 0 && !formData.product_type) {
-                    setFormData(prev => ({ ...prev, product_type: data[0].name }));
+                const filtered = data.filter(pt => pt.status !== 'Inactivo' || pt.name === currentProductType);
+                setProductTypes(filtered);
+                if (!isEdit && filtered.length > 0 && !formData.product_type) {
+                    setFormData(prev => ({ ...prev, product_type: filtered[0].name }));
                 }
             }
         } catch (err) {
@@ -199,6 +202,7 @@ export default function DispatchForm() {
                         license_plate: d.license_plate || '',
                         status: d.status
                     });
+                    return d.product_type;
                 }
             }
         } catch (err) {
@@ -523,21 +527,16 @@ export default function DispatchForm() {
                                 required
                                 type="text"
                                 value={formData.order_number}
-                                onChange={handleOrderNumberChange}
-                                onBlur={handleOrderNumberBlur}
-                                placeholder="Ej: ORD-2026-0001"
+                                readOnly={true}
+                                placeholder="Generando código..."
                                 style={{ 
                                     width: '100%', padding: '14px 16px', borderRadius: '14px', background: 'var(--bg-tertiary)', 
-                                    border: `1px solid ${orderNumberError ? '#f87171' : 'var(--glass-border)'}`, 
+                                    border: '1px solid var(--glass-border)', 
                                     color: 'var(--text-primary)', fontFamily: 'inherit', 
-                                    fontSize: '0.95rem', fontWeight: '700', outline: 'none', transition: 'all 0.2s'
+                                    fontSize: '0.95rem', fontWeight: '700', outline: 'none', transition: 'all 0.2s',
+                                    cursor: 'not-allowed', opacity: 0.8
                                 }}
                             />
-                            {orderNumberError && (
-                                <div style={{ fontSize: '0.8rem', color: '#f87171', marginTop: '6px', fontWeight: '600' }}>
-                                    ⚠️ {orderNumberError}
-                                </div>
-                            )}
                         </div>
                         <div>
                             <label style={{ display: 'block', marginBottom: '8px', color: 'var(--text-secondary)', fontSize: '0.9rem', fontWeight: '600' }}>Fecha y Hora Exacta de Salida *</label>

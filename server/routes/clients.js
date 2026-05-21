@@ -1,9 +1,10 @@
 const express = require('express');
 const router = express.Router();
 const db = require('../database');
+const { authenticateJWT, requireRole } = require('../middleware/authMiddleware');
 
 // Obtener todos los clientes
-router.get('/', (req, res) => {
+router.get('/', authenticateJWT, (req, res) => {
     db.all("SELECT * FROM clients ORDER BY createdAt DESC", [], (err, rows) => {
         if (err) {
             return res.status(500).json({ error: 'Error al obtener clientes.' });
@@ -13,46 +14,69 @@ router.get('/', (req, res) => {
 });
 
 // Crear nuevo cliente
-router.post('/', (req, res) => {
+// Duplicate route removed - using async implementation below
+router.post('/', authenticateJWT, async (req, res) => {
     let { name, rif, state, address, phone, contact_person, email } = req.body;
-    
+
     if (!name || name.trim() === '') {
         return res.status(400).json({ error: 'El Nombre es obligatorio.' });
     }
 
+    // Generate unique pending RIF if not provided
     if (!rif || rif.trim() === '') {
-        rif = `PENDIENTE-${Date.now()}-${Math.floor(100 + Math.random() * 900)}`;
+        let unique = false;
+        while (!unique) {
+            const candidate = `PENDIENTE-${Date.now()}-${Math.floor(100 + Math.random() * 900)}`;
+            // Check existence
+            const existing = await new Promise((resolve) => {
+                db.get('SELECT id FROM clients WHERE rif = ?', [candidate], (err, row) => {
+                    if (err) resolve(null);
+                    else resolve(row);
+                });
+            });
+            if (!existing) {
+                rif = candidate;
+                unique = true;
+            } else {
+                await new Promise(r => setTimeout(r, 10));
+            }
+        }
     }
 
     if (!state || state.trim() === '') {
         state = 'Sin Registrar';
     }
 
-    const stmt = db.prepare(`
-        INSERT INTO clients (name, rif, state, address, phone, contact_person, email)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-    `);
+    const insertSql = `INSERT INTO clients (name, rif, state, address, phone, contact_person, email) VALUES (?, ?, ?, ?, ?, ?, ?)`;
+    // Wrap db.run in a promise
+    const result = await new Promise((resolve, reject) => {
+        db.run(insertSql, [name, rif, state, address, phone, contact_person, email], function (err) {
+            if (err) return reject(err);
+            resolve({ lastID: this.lastID, changes: this.changes });
+        });
+    }).catch(err => err);
 
-    stmt.run([name, rif, state, address, phone, contact_person, email], function(err) {
-        if (err) {
-            if (err.message.includes('UNIQUE constraint failed')) {
-                return res.status(400).json({ error: 'El RIF ya está registrado.' });
-            }
-            return res.status(500).json({ error: 'Error al crear cliente.' });
+    if (result instanceof Error) {
+        if (result.message.includes('UNIQUE')) {
+            return res.status(400).json({ error: 'El RIF ya está registrado.' });
         }
-        
-        const ip = req.ip || req.connection.remoteAddress;
-        const userId = req.headers['x-user-id'] || null;
-        db.logAudit(userId, 'CLIENTE_CREADO', `Se registró el cliente "${name}" (RIF: ${rif}, Estado: ${state}).`, ip);
-        
-        db.get("SELECT * FROM clients WHERE id = ?", [this.lastID], (err, row) => {
-            res.status(201).json(row);
+        return res.status(500).json({ error: 'Error al crear cliente.' });
+    }
+
+    const ip = req.ip || req.connection.remoteAddress;
+    const userId = req.user.id;
+    await db.logAudit(userId, 'CLIENTE_CREADO', `Se registró el cliente "${name}" (RIF: ${rif}, Estado: ${state}).`, ip);
+    const newClient = await new Promise((resolve, reject) => {
+        db.get('SELECT * FROM clients WHERE id = ?', [result.lastID], (err, row) => {
+            if (err) return reject(err);
+            resolve(row);
         });
     });
+    res.status(201).json(newClient);
 });
 
 // Actualizar cliente
-router.put('/:id', (req, res) => {
+router.put('/:id', authenticateJWT, (req, res) => {
     let { name, rif, state, address, phone, contact_person, email } = req.body;
     
     if (!name || name.trim() === '') {
@@ -84,7 +108,7 @@ router.put('/:id', (req, res) => {
         }
         
         const ip = req.ip || req.connection.remoteAddress;
-        const userId = req.headers['x-user-id'] || null;
+        const userId = req.user.id;
         db.logAudit(userId, 'CLIENTE_EDITADO', `Se actualizaron los datos del cliente ID ${req.params.id} ("${name}", RIF: ${rif}, Estado: ${state}).`, ip);
         
         res.json({ success: true, changes: this.changes });
@@ -92,9 +116,9 @@ router.put('/:id', (req, res) => {
 });
 
 // Eliminar cliente
-router.delete('/:id', (req, res) => {
+router.delete('/:id', authenticateJWT, requireRole(['Administrador', 'Supervisor']), (req, res) => {
     const ip = req.ip || req.connection.remoteAddress;
-    const userId = req.headers['x-user-id'] || null;
+    const userId = req.user.id;
 
     db.get("SELECT name, rif FROM clients WHERE id = ?", [req.params.id], (err, clientRow) => {
         if (err) return res.status(500).json({ error: 'Error de base de datos.' });
@@ -117,7 +141,7 @@ router.delete('/:id', (req, res) => {
 });
 
 // Buscar clientes
-router.get('/search', (req, res) => {
+router.get('/search', authenticateJWT, (req, res) => {
     const term = req.query.q;
     if (!term) return res.json([]);
     
