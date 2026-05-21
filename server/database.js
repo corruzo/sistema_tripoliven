@@ -117,7 +117,7 @@ db.logAudit = (userId, action, details, ipAddress) => {
             [userId || null, action, details || null, ipAddress || null],
             (err) => {
                 if (err) {
-                    console.error('⚠️ [AUDITORÍA] Error al registrar log de auditoría:', err.message);
+                    console.error('[AUDITORÍA] Error al registrar log de auditoría:', err.message);
                 }
                 resolve();
             }
