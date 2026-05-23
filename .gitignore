@@ -15,11 +15,26 @@ client/dist/
 client/dist-electron/
 dist/
 
-# Env
+# ============================================================
+# SEGURIDAD — Variables de entorno (NUNCA commitear)
+# ============================================================
 .env
 .env.local
+.env.production
+.env.staging
+server/.env
+
+# ============================================================
+# SEGURIDAD — Respaldos de base de datos (contienen datos reales)
+# Los backups NUNCA deben estar en el repositorio.
+# Almacenarlos en un sistema externo seguro (NAS, cifrado, etc.)
+# ============================================================
+*.sql
+tripoliven_db_backup.sql
+respaldo_tripoliven_*.sql
 
 # SQLite temp files
+server/database.sqlite
 server/database.sqlite-shm
 server/database.sqlite-wal
 

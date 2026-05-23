@@ -3,9 +3,11 @@ const router = express.Router();
 const db = require('../database');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
-const { JWT_SECRET } = require('../middleware/authMiddleware');
+const { JWT_SECRET, authenticateJWT, revokeToken } = require('../middleware/authMiddleware');
 
-// POST login
+// ============================================================
+// POST /login — Autenticar usuario y emitir token JWT
+// ============================================================
 router.post('/login', (req, res) => {
     const { username, password } = req.body;
     if (!username || !password) {
@@ -13,7 +15,8 @@ router.post('/login', (req, res) => {
     }
 
     const query = `
-        SELECT u.*, p.name as position_name, d.name as department_name
+        SELECT u.id, u.username, u.password, u.name, u.system_role, u.status,
+               p.name as position_name, d.name as department_name
         FROM users u
         LEFT JOIN positions p ON u.position_id = p.id
         LEFT JOIN departments d ON u.department_id = d.id
@@ -23,7 +26,7 @@ router.post('/login', (req, res) => {
         const ip = req.ip || req.connection.remoteAddress;
         if (err) {
             db.logAudit(null, 'INICIO_SESION_ERROR', `Error del sistema en autenticación: ${err.message}`, ip);
-            return res.status(500).json({ error: 'Error interno en la autenticación: ' + err.message });
+            return res.status(500).json({ error: 'Error interno en la autenticación.' });
         }
         if (!row) {
             db.logAudit(null, 'INICIO_SESION_FALLIDO', `Intento de acceso fallido con el usuario: "${username}".`, ip);
@@ -37,22 +40,44 @@ router.post('/login', (req, res) => {
             return res.status(401).json({ error: 'Usuario o contraseña incorrectos, o cuenta inactiva.' });
         }
 
-        // Generar token JWT firmado
+        // Generar token JWT firmado — solo incluir campos mínimos necesarios
         const payload = {
             id: row.id,
             username: row.username,
             system_role: row.system_role
         };
-        const token = jwt.sign(payload, JWT_SECRET, { expiresIn: '12h' });
+        // Duración reducida a 8h para acotar ventana de exposición
+        const token = jwt.sign(payload, JWT_SECRET, { expiresIn: '8h' });
 
-        // Eliminar contraseña de la respuesta por seguridad
-        const userResponse = { ...row };
-        delete userResponse.password;
+        // Respuesta mínima: solo datos no sensibles necesarios para la UI
+        const userResponse = {
+            id: row.id,
+            username: row.username,
+            name: row.name,
+            system_role: row.system_role,
+            position_name: row.position_name,
+            department_name: row.department_name
+        };
 
         db.logAudit(row.id, 'INICIO_SESION_EXITOSO', `Sesión iniciada correctamente. Rol: ${row.system_role}.`, ip);
         res.json({ success: true, user: userResponse, token });
     });
 });
 
-module.exports = router;
+// ============================================================
+// POST /logout — Revocar token JWT activo (blacklist)
+// ============================================================
+router.post('/logout', authenticateJWT, (req, res) => {
+    const ip = req.ip || req.connection.remoteAddress;
+    const token = req.token;
+    const decoded = req.user;
 
+    // Agregar token a la blacklist hasta que expire naturalmente
+    revokeToken(token, decoded.exp);
+
+    db.logAudit(decoded.id, 'CIERRE_SESION', `Sesión cerrada y token revocado. Usuario: ${decoded.username}.`, ip);
+
+    res.json({ success: true, message: 'Sesión cerrada correctamente.' });
+});
+
+module.exports = router;

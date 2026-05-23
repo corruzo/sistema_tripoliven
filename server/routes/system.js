@@ -248,6 +248,16 @@ router.post('/backup/restore', authenticateJWT, requireRole(['Administrador']), 
     const userId = req.user.id;
     const ip = req.ip || req.connection.remoteAddress;
 
+    // Validar Content-Type antes de leer el cuerpo
+    // Solo se aceptan tipos de contenido explícitamente permitidos para archivos SQL
+    const contentType = (req.headers['content-type'] || '').toLowerCase().split(';')[0].trim();
+    const allowedTypes = ['text/plain', 'application/sql', 'application/octet-stream'];
+    if (!allowedTypes.includes(contentType)) {
+        return res.status(415).json({
+            error: `Tipo de contenido no permitido: "${contentType}". El archivo debe enviarse como text/plain o application/sql.`
+        });
+    }
+
     try {
         // Leer el cuerpo del request como texto plano (el dump SQL)
         let sqlContent = '';

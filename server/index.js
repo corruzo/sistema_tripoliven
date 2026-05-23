@@ -4,6 +4,8 @@ const cors = require('cors');
 const morgan = require('morgan');
 const compression = require('compression');
 const bodyParser = require('body-parser');
+const helmet = require('helmet');
+const rateLimit = require('express-rate-limit');
 const db = require('./database');
 
 // Importar Enrutadores Modulares
@@ -18,32 +20,106 @@ const systemRouter = require('./routes/system');
 
 const app = express();
 const PORT = process.env.PORT || 4000;
+const NODE_ENV = process.env.NODE_ENV || 'development';
 
-// Middlewares Globales
+// =======================
+// HELMET — Cabeceras de seguridad HTTP
+// Protege contra clickjacking, XSS, sniffing de MIME, etc.
+// =======================
+app.use(helmet({
+    contentSecurityPolicy: {
+        directives: {
+            defaultSrc: ["'self'"],
+            scriptSrc: ["'self'"],
+            styleSrc: ["'self'", "'unsafe-inline'"], // Requerido para estilos inline de React
+            imgSrc: ["'self'", "data:"],
+            connectSrc: ["'self'", "http://localhost:*", "http://127.0.0.1:*"],
+            fontSrc: ["'self'", "https://fonts.gstatic.com"],
+            objectSrc: ["'none'"],
+            frameAncestors: ["'none'"], // Equivale a X-Frame-Options: DENY
+        }
+    },
+    crossOriginEmbedderPolicy: false // Desactivar para compatibilidad con Electron
+}));
+
+// =======================
+// CORS — Política de orígenes permitidos
+// Producción: solo orígenes explícitos de ALLOWED_ORIGINS
+// Desarrollo: loopback, LAN privada (RFC1918) y Electron
+// =======================
+let allowedOrigins;
+
+if (NODE_ENV === 'production') {
+    // En producción, cargar orígenes desde variable de entorno (lista separada por comas)
+    // Ejemplo: ALLOWED_ORIGINS=http://192.168.1.100:3000,http://erp.tripoliven.local
+    const originsEnv = process.env.ALLOWED_ORIGINS || '';
+    allowedOrigins = originsEnv.split(',').map(o => o.trim()).filter(Boolean);
+
+    if (allowedOrigins.length === 0) {
+        console.warn('⚠️  [CORS] NODE_ENV=production pero ALLOWED_ORIGINS no está definida. CORS rechazará todas las solicitudes externas.');
+    }
+}
+
 const corsOptions = {
     origin: function (origin, callback) {
-        // Permitir solicitudes sin origen (como peticiones directas de Electron en prod, curl o apps locales)
+        // Permitir solicitudes sin origen: Electron, apps nativas, curl en LAN
         if (!origin) return callback(null, true);
-        
-        // Permitir loopback local, file://, app:// o bloques de red privada LAN comunes (RFC 1918)
-        const isLocal = origin.startsWith('http://localhost') ||
-                        origin.startsWith('http://127.0.0.1') ||
-                        origin.startsWith('file://') ||
-                        origin.startsWith('app://') ||
-                        /^http:\/\/(192\.168\.\d+\.\d+|10\.\d+\.\d+\.\d+|172\.(1[6-9]|2\d|3[0-1])\.\d+\.\d+)(:\d+)?$/.test(origin);
-                        
-        if (isLocal) {
-            callback(null, true);
+
+        if (NODE_ENV === 'production') {
+            // Producción: solo orígenes explícitamente permitidos
+            if (allowedOrigins.includes(origin)) {
+                callback(null, true);
+            } else {
+                callback(new Error('Acceso denegado por política CORS de Tripoliven.'));
+            }
         } else {
-            callback(new Error('Acceso denegado por política CORS de Tripoliven.'));
+            // Desarrollo: loopback local, file://, app:// o bloques de red privada LAN (RFC 1918)
+            const isLocal =
+                origin.startsWith('http://localhost') ||
+                origin.startsWith('http://127.0.0.1') ||
+                origin.startsWith('file://') ||
+                origin.startsWith('app://') ||
+                /^http:\/\/(192\.168\.\d+\.\d+|10\.\d+\.\d+\.\d+|172\.(1[6-9]|2\d|3[0-1])\.\d+\.\d+)(:\d+)?$/.test(origin);
+
+            if (isLocal) {
+                callback(null, true);
+            } else {
+                callback(new Error('Acceso denegado por política CORS de Tripoliven.'));
+            }
         }
     },
     credentials: true
 };
 app.use(cors(corsOptions));
-app.use(compression()); // Compresión GZIP para optimizar transferencia de red (JSON pesado)
-if (process.env.NODE_ENV !== 'production') {
-    app.use(morgan('dev')); // Solo registrar logs en consola durante desarrollo para evitar bloquear el event loop
+
+// =======================
+// RATE LIMITING — Protección contra fuerza bruta en login
+// Máximo 10 intentos por IP cada 15 minutos
+// =======================
+const loginLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000, // 15 minutos
+    max: 10,                   // Máximo 10 intentos por ventana
+    standardHeaders: true,     // Incluir cabeceras RateLimit-* estándar
+    legacyHeaders: false,
+    message: {
+        error: 'Demasiados intentos de inicio de sesión desde esta dirección. Por seguridad, intenta de nuevo en 15 minutos.'
+    },
+    handler: (req, res, next, options) => {
+        const ip = req.ip || req.connection.remoteAddress;
+        console.warn(`⚠️  [RATE LIMIT] IP bloqueada por exceso de intentos de login: ${ip}`);
+        res.status(429).json(options.message);
+    }
+});
+
+// Aplicar rate limiting solo al endpoint de login
+app.use('/api/auth/login', loginLimiter);
+
+// =======================
+// MIDDLEWARES GLOBALES
+// =======================
+app.use(compression()); // Compresión GZIP para optimizar transferencia de red
+if (NODE_ENV !== 'production') {
+    app.use(morgan('dev')); // Logs solo en desarrollo
 }
 app.use(bodyParser.json());
 
@@ -74,7 +150,7 @@ app.post('/api/login', (req, res, next) => {
 app.get('/api/dashboard/stats', (req, res, next) => {
     db.all("SELECT status, count(*) as count FROM users GROUP BY status", [], (err, rows) => {
         if (err) return next(err);
-        
+
         let active = 0;
         let inactive = 0;
         const statsRows = rows || [];
@@ -151,12 +227,12 @@ app.use((req, res, next) => {
 // Middleware de error global
 app.use((err, req, res, next) => {
     logCrash('Express Middleware Error', err);
-    res.status(500).json({ 
+    res.status(500).json({
         error: 'Ha ocurrido un problema interno en el servidor. La operación no pudo completarse.',
-        details: process.env.NODE_ENV === 'development' ? err.message : undefined
+        details: NODE_ENV === 'development' ? err.message : undefined
     });
 });
 
 app.listen(PORT, () => {
-    console.log(`🚀 Servidor corporativo ejecutándose en el puerto ${PORT}`);
+    console.log(`🚀 Servidor corporativo ejecutándose en el puerto ${PORT} [${NODE_ENV}]`);
 });

@@ -135,16 +135,33 @@ function App() {
 
   const handleLoginSuccess = (user, token) => {
     const now = Date.now().toString();
-    localStorage.setItem('tripoliven_user', JSON.stringify(user));
+    // Solo guardar datos mínimos necesarios para la UI — nunca datos sensibles completos
+    const safeUser = {
+      id: user.id,
+      username: user.username,
+      name: user.name,
+      system_role: user.system_role,
+      position_name: user.position_name,
+      department_name: user.department_name
+    };
+    localStorage.setItem('tripoliven_user', JSON.stringify(safeUser));
     localStorage.setItem('tripoliven_token', token);
     localStorage.setItem('tripoliven_login_time', now);
     localStorage.setItem('tripoliven_last_active', now);
-    setCurrentUser(user);
+    setCurrentUser(safeUser);
     setIsServerOnline(true);
   };
 
   const performLogout = (force = false) => {
     if (force || window.confirm('¿Seguro que deseas cerrar tu sesión?')) {
+      // Revocar el token en el servidor (blacklist) — fire & forget, no bloquear el logout local
+      const token = localStorage.getItem('tripoliven_token');
+      if (token) {
+        fetch(`${API_BASE_URL}/api/auth/logout`, {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${token}` }
+        }).catch(() => { /* Ignorar errores de red — la sesión local se cierra de todas formas */ });
+      }
       localStorage.removeItem('tripoliven_user');
       localStorage.removeItem('tripoliven_token');
       localStorage.removeItem('tripoliven_last_active');
