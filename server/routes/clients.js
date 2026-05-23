@@ -3,19 +3,19 @@ const router = express.Router();
 const db = require('../database');
 const { authenticateJWT, requireRole } = require('../middleware/authMiddleware');
 
-// Obtener todos los clientes
-router.get('/', authenticateJWT, (req, res) => {
+// Obtener todos los clientes (Solo Administrador, Superusuario, Supervisor)
+router.get('/', authenticateJWT, requireRole(['Administrador', 'Superusuario', 'Supervisor']), (req, res) => {
     db.all("SELECT * FROM clients ORDER BY createdAt DESC", [], (err, rows) => {
         if (err) {
-            return res.status(500).json({ error: 'Error al obtener clientes.' });
+            console.error('Error al obtener clientes:', err);
+            return res.status(500).json({ error: 'Error al obtener clientes del sistema.' });
         }
         res.json(rows);
     });
 });
 
-// Crear nuevo cliente
-// Duplicate route removed - using async implementation below
-router.post('/', authenticateJWT, async (req, res) => {
+// Crear nuevo cliente (Solo Administrador, Superusuario, Supervisor)
+router.post('/', authenticateJWT, requireRole(['Administrador', 'Superusuario', 'Supervisor']), async (req, res) => {
     let { name, rif, state, address, phone, contact_person, email } = req.body;
 
     if (!name || name.trim() === '') {
@@ -57,26 +57,36 @@ router.post('/', authenticateJWT, async (req, res) => {
     }).catch(err => err);
 
     if (result instanceof Error) {
-        if (result.message.includes('UNIQUE')) {
+        if (result.message && result.message.includes('UNIQUE')) {
             return res.status(400).json({ error: 'El RIF ya está registrado.' });
         }
-        return res.status(500).json({ error: 'Error al crear cliente.' });
+        console.error('Error al crear cliente:', result);
+        return res.status(500).json({ error: 'Error interno al registrar el cliente.' });
     }
 
     const ip = req.ip || req.connection.remoteAddress;
     const userId = req.user.id;
     await db.logAudit(userId, 'CLIENTE_CREADO', `Se registró el cliente "${name}" (RIF: ${rif}, Estado: ${state}).`, ip);
+    
     const newClient = await new Promise((resolve, reject) => {
         db.get('SELECT * FROM clients WHERE id = ?', [result.lastID], (err, row) => {
             if (err) return reject(err);
             resolve(row);
         });
+    }).catch(err => {
+        console.error('Error al recuperar cliente creado:', err);
+        return null;
     });
+
+    if (!newClient) {
+        return res.status(500).json({ error: 'Error al recuperar los datos del cliente creado.' });
+    }
+
     res.status(201).json(newClient);
 });
 
-// Actualizar cliente
-router.put('/:id', authenticateJWT, (req, res) => {
+// Actualizar cliente (Solo Administrador, Superusuario, Supervisor)
+router.put('/:id', authenticateJWT, requireRole(['Administrador', 'Superusuario', 'Supervisor']), (req, res) => {
     let { name, rif, state, address, phone, contact_person, email } = req.body;
     
     if (!name || name.trim() === '') {
@@ -98,13 +108,13 @@ router.put('/:id', authenticateJWT, (req, res) => {
     `;
     const params = [name, rif, state, address, phone, contact_person, email, req.params.id];
 
-
     db.run(query, params, function(err) {
         if (err) {
-            if (err.message.includes('UNIQUE')) {
+            if (err.message && err.message.includes('UNIQUE')) {
                 return res.status(400).json({ error: 'El RIF ya está registrado por otro cliente.' });
             }
-            return res.status(500).json({ error: 'Error al actualizar el cliente.' });
+            console.error('Error al actualizar cliente:', err);
+            return res.status(500).json({ error: 'Error al actualizar el cliente en el sistema.' });
         }
         
         const ip = req.ip || req.connection.remoteAddress;
@@ -115,24 +125,33 @@ router.put('/:id', authenticateJWT, (req, res) => {
     });
 });
 
-// Eliminar cliente
-router.delete('/:id', authenticateJWT, requireRole(['Administrador', 'Supervisor']), (req, res) => {
+// Eliminar cliente (Solo Administrador, Superusuario, Supervisor)
+router.delete('/:id', authenticateJWT, requireRole(['Administrador', 'Superusuario', 'Supervisor']), (req, res) => {
     const ip = req.ip || req.connection.remoteAddress;
     const userId = req.user.id;
 
     db.get("SELECT name, rif FROM clients WHERE id = ?", [req.params.id], (err, clientRow) => {
-        if (err) return res.status(500).json({ error: 'Error de base de datos.' });
+        if (err) {
+            console.error('Error al buscar cliente para eliminar:', err);
+            return res.status(500).json({ error: 'Error interno en el servidor.' });
+        }
         if (!clientRow) return res.status(404).json({ error: 'Cliente no encontrado.' });
 
         // Verificar si el cliente tiene despachos asociados
         db.get("SELECT count(*) as count FROM dispatches WHERE client_id = ?", [req.params.id], (err, row) => {
-            if (err) return res.status(500).json({ error: 'Error de base de datos.' });
+            if (err) {
+                console.error('Error al buscar despachos vinculados al cliente:', err);
+                return res.status(500).json({ error: 'Error interno en el servidor.' });
+            }
             if (row.count > 0) {
                 return res.status(400).json({ error: 'No se puede eliminar el cliente porque tiene despachos asociados.' });
             }
 
             db.run("DELETE FROM clients WHERE id = ?", [req.params.id], function(err) {
-                if (err) return res.status(500).json({ error: 'Error al eliminar cliente.' });
+                if (err) {
+                    console.error('Error al eliminar cliente:', err);
+                    return res.status(500).json({ error: 'Error interno al eliminar el cliente.' });
+                }
                 db.logAudit(userId, 'CLIENTE_ELIMINADO', `Se eliminó el cliente ID ${req.params.id} ("${clientRow.name}", RIF: ${clientRow.rif}).`, ip);
                 res.json({ success: true, changes: this.changes });
             });
@@ -140,13 +159,16 @@ router.delete('/:id', authenticateJWT, requireRole(['Administrador', 'Supervisor
     });
 });
 
-// Buscar clientes
-router.get('/search', authenticateJWT, (req, res) => {
+// Buscar clientes (Solo Administrador, Superusuario, Supervisor)
+router.get('/search', authenticateJWT, requireRole(['Administrador', 'Superusuario', 'Supervisor']), (req, res) => {
     const term = req.query.q;
     if (!term) return res.json([]);
     
     db.all("SELECT * FROM clients WHERE name LIKE ? OR rif LIKE ? LIMIT 10", [`%${term}%`, `%${term}%`], (err, rows) => {
-        if (err) return res.status(500).json({ error: 'Error al buscar clientes.' });
+        if (err) {
+            console.error('Error al buscar clientes:', err);
+            return res.status(500).json({ error: 'Error al buscar clientes en el sistema.' });
+        }
         res.json(rows);
     });
 });

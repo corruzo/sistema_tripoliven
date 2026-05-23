@@ -23,6 +23,27 @@ const PORT = process.env.PORT || 4000;
 const NODE_ENV = process.env.NODE_ENV || 'development';
 
 // =======================
+// HTTPS FORZADO — Proteger datos en tránsito en producción
+// =======================
+if (process.env.FORCE_HTTPS === 'true' || NODE_ENV === 'production') {
+    app.use((req, res, next) => {
+        const isSecure = req.secure || req.headers['x-forwarded-proto'] === 'https';
+        if (isSecure) {
+            next();
+        } else {
+            if (req.method === 'GET') {
+                return res.redirect(301, `https://${req.headers.host}${req.url}`);
+            } else {
+                return res.status(403).json({ 
+                    error: 'Conexión insegura. Se requiere protocolo seguro HTTPS para transmitir datos en el ERP corporativo.' 
+                });
+            }
+        }
+    });
+}
+
+
+// =======================
 // HELMET — Cabeceras de seguridad HTTP
 // Protege contra clickjacking, XSS, sniffing de MIME, etc.
 // =======================

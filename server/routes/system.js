@@ -296,9 +296,9 @@ router.post('/backup/restore', authenticateJWT, requireRole(['Administrador']), 
         });
 
     } catch (err) {
-        console.error('❌ [RESTORE] Error al restaurar el respaldo:', err.message);
+        console.error('❌ [RESTORE] Error al restaurar el respaldo:', err);
         res.status(500).json({
-            error: `Error interno durante la restauración: ${err.message}`
+            error: 'Error interno durante la restauración de la base de datos.'
         });
     }
 });

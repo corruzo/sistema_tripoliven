@@ -28,7 +28,10 @@ router.get('/analytics', authenticateJWT, (req, res) => {
     }
 
     db.all(query, params, (err, rows) => {
-        if (err) return res.status(500).json({ error: 'Error al calcular analíticas: ' + err.message });
+        if (err) {
+            console.error('Error al calcular analíticas:', err);
+            return res.status(500).json({ error: 'Error al calcular analíticas en el sistema.' });
+        }
 
         // Ya vienen filtradas de la base de datos si se especificó el filtro (guardado defensivo)
         const filteredRows = rows || [];
@@ -151,7 +154,8 @@ router.get('/next-order-number', authenticateJWT, (req, res) => {
         const candidate = generateRandomAlphanumeric(length);
         db.get("SELECT id FROM dispatches WHERE order_number = ?", [candidate], (err, row) => {
             if (err) {
-                return res.status(500).json({ error: 'Error al generar código alfanumérico: ' + err.message });
+                console.error('Error al generar código alfanumérico:', err);
+                return res.status(500).json({ error: 'Error al generar código alfanumérico en el sistema.' });
             }
             if (row) {
                 // Colisión (altamente improbable), reintentar generación
@@ -165,7 +169,7 @@ router.get('/next-order-number', authenticateJWT, (req, res) => {
     checkAndGenerate();
 });
 
-// Validar si un número de orden ya existe
+// Registrar un número de orden y verificar disponibilidad
 router.get('/check-order', authenticateJWT, (req, res) => {
     const { order_number, excludeId } = req.query;
     if (!order_number) {
@@ -182,7 +186,8 @@ router.get('/check-order', authenticateJWT, (req, res) => {
     
     db.get(query, params, (err, row) => {
         if (err) {
-            return res.status(500).json({ error: 'Error al verificar disponibilidad del número de orden: ' + err.message });
+            console.error('Error al verificar disponibilidad del número de orden:', err);
+            return res.status(500).json({ error: 'Error al verificar disponibilidad del número de orden.' });
         }
         res.json({ exists: !!row });
     });
@@ -212,12 +217,15 @@ router.get('/', authenticateJWT, (req, res) => {
     query += " ORDER BY d.dispatch_datetime DESC";
 
     db.all(query, params, (err, rows) => {
-        if (err) return res.status(500).json({ error: 'Error al obtener despachos: ' + err.message });
+        if (err) {
+            console.error('Error al obtener despachos:', err);
+            return res.status(500).json({ error: 'Error al obtener despachos en el sistema.' });
+        }
         res.json(rows || []);
     });
 });
 
-// POST register new dispatch
+// POST register new dispatch (Basic User or elevated role can create)
 router.post('/', authenticateJWT, (req, res) => {
     const { 
         client_id, product_type, quantity_tm, 
@@ -244,10 +252,11 @@ router.post('/', authenticateJWT, (req, res) => {
 
     db.run(query, params, function(err) {
         if (err) {
-            if (err.message.includes('UNIQUE')) {
+            if (err.message && err.message.includes('UNIQUE')) {
                 return res.status(400).json({ error: 'El número de orden o factura ya se encuentra registrado.' });
             }
-            return res.status(500).json({ error: 'Error al registrar el despacho: ' + err.message });
+            console.error('Error al registrar el despacho:', err);
+            return res.status(500).json({ error: 'Error interno al registrar el despacho.' });
         }
         invalidateCache();
         const ip = req.ip || req.connection.remoteAddress;
@@ -259,8 +268,9 @@ router.post('/', authenticateJWT, (req, res) => {
     });
 });
 
-// PUT update existing dispatch
+// PUT update existing dispatch (Enforces ownership or elevated role - IDOR protection)
 router.put('/:id', authenticateJWT, (req, res) => {
+    const dispatchId = req.params.id;
     const { 
         client_id, product_type, quantity_tm, 
         destination_state, dispatch_datetime, order_number, 
@@ -271,58 +281,114 @@ router.put('/:id', authenticateJWT, (req, res) => {
         return res.status(400).json({ error: 'Todos los campos obligatorios deben ser completados.' });
     }
 
-    const query = `
-        UPDATE dispatches 
-        SET client_id = ?, product_type = ?, quantity_tm = ?, 
-            destination_state = ?, dispatch_datetime = ?, order_number = ?, 
-            driver_name = ?, license_plate = ?, status = ?
-        WHERE id = ?
-    `;
-    const params = [
-        client_id, product_type, parseFloat(quantity_tm), 
-        destination_state, dispatch_datetime, order_number, 
-        driver_name || null, license_plate || null, status, req.params.id
-    ];
-
-    db.run(query, params, function(err) {
+    // 1. Validar ownership e integridad de acceso (IDOR)
+    db.get("SELECT created_by FROM dispatches WHERE id = ?", [dispatchId], (err, row) => {
         if (err) {
-            if (err.message.includes('UNIQUE')) {
-                return res.status(400).json({ error: 'El número de orden o factura ya se encuentra registrado por otro despacho.' });
-            }
-            return res.status(500).json({ error: 'Error al actualizar el despacho: ' + err.message });
+            console.error('Error al verificar despacho para actualización:', err);
+            return res.status(500).json({ error: 'Error al verificar el despacho.' });
         }
-        invalidateCache();
-        const ip = req.ip || req.connection.remoteAddress;
-        const userId = req.user.id;
-        db.logAudit(userId, 'DESPACHO_EDITADO', `Se actualizaron los datos del despacho ID ${req.params.id} (Orden "${order_number}", Cliente ID ${client_id}, ${quantity_tm} TM de ${product_type}).`, ip);
-        res.json({ success: true, changes: this.changes });
+        if (!row) {
+            return res.status(404).json({ error: 'Despacho no encontrado.' });
+        }
+
+        const hasElevatedPrivileges = ['Administrador', 'Superusuario', 'Supervisor'].includes(req.user.system_role);
+        if (!hasElevatedPrivileges && row.created_by !== req.user.id) {
+            return res.status(403).json({ 
+                error: 'Acceso denegado. No tienes autorización para modificar registros de producción creados por otros usuarios.' 
+            });
+        }
+
+        // 2. Proceder con el UPDATE
+        const query = `
+            UPDATE dispatches 
+            SET client_id = ?, product_type = ?, quantity_tm = ?, 
+                destination_state = ?, dispatch_datetime = ?, order_number = ?, 
+                driver_name = ?, license_plate = ?, status = ?
+            WHERE id = ?
+        `;
+        const params = [
+            client_id, product_type, parseFloat(quantity_tm), 
+            destination_state, dispatch_datetime, order_number, 
+            driver_name || null, license_plate || null, status, dispatchId
+        ];
+
+        db.run(query, params, function(err) {
+            if (err) {
+                if (err.message && err.message.includes('UNIQUE')) {
+                    return res.status(400).json({ error: 'El número de orden o factura ya se encuentra registrado por otro despacho.' });
+                }
+                console.error('Error al actualizar el despacho:', err);
+                return res.status(500).json({ error: 'Error al actualizar el despacho en el sistema.' });
+              }
+              invalidateCache();
+              const ip = req.ip || req.connection.remoteAddress;
+              const userId = req.user.id;
+              db.logAudit(userId, 'DESPACHO_EDITADO', `Se actualizaron los datos del despacho ID ${dispatchId} (Orden "${order_number}", Cliente ID ${client_id}, ${quantity_tm} TM de ${product_type}).`, ip);
+              res.json({ success: true, changes: this.changes });
+        });
     });
 });
 
-// PUT update only dispatch status
+// PUT update only dispatch status (Enforces ownership or elevated role - IDOR protection)
 router.put('/:id/status', authenticateJWT, (req, res) => {
+    const dispatchId = req.params.id;
     const { status } = req.body;
     if (!status) return res.status(400).json({ error: 'El estatus es obligatorio.' });
 
-    db.run("UPDATE dispatches SET status = ? WHERE id = ?", [status, req.params.id], function(err) {
-        if (err) return res.status(500).json({ error: 'Error al actualizar estatus: ' + err.message });
-        invalidateCache();
-        const ip = req.ip || req.connection.remoteAddress;
-        const userId = req.user.id;
-        db.logAudit(userId, 'DESPACHO_ESTADO_MODIFICADO', `Se modificó el estatus del despacho ID ${req.params.id} a "${status}".`, ip);
-        res.json({ success: true, changes: this.changes, status });
+    // 1. Validar ownership (IDOR)
+    db.get("SELECT created_by FROM dispatches WHERE id = ?", [dispatchId], (err, row) => {
+        if (err) {
+            console.error('Error al verificar despacho para actualizar estatus:', err);
+            return res.status(500).json({ error: 'Error al verificar el despacho.' });
+        }
+        if (!row) {
+            return res.status(404).json({ error: 'Despacho no encontrado.' });
+        }
+
+        const hasElevatedPrivileges = ['Administrador', 'Superusuario', 'Supervisor'].includes(req.user.system_role);
+        if (!hasElevatedPrivileges && row.created_by !== req.user.id) {
+            return res.status(403).json({ 
+                error: 'Acceso denegado. No tienes autorización para modificar estatus de registros creados por otros usuarios.' 
+            });
+        }
+
+        // 2. Proceder con el UPDATE
+        db.run("UPDATE dispatches SET status = ? WHERE id = ?", [status, dispatchId], function(err) {
+            if (err) {
+                console.error('Error al actualizar estatus:', err);
+                return res.status(500).json({ error: 'Error al actualizar estatus en el sistema.' });
+            }
+            invalidateCache();
+            const ip = req.ip || req.connection.remoteAddress;
+            const userId = req.user.id;
+            db.logAudit(userId, 'DESPACHO_ESTADO_MODIFICADO', `Se modificó el estatus del despacho ID ${dispatchId} a "${status}".`, ip);
+            res.json({ success: true, changes: this.changes, status });
+        });
     });
 });
 
-// DELETE dispatch record (Auditoría: Físico antes de 20 min, Anulación después de 20 min)
+// DELETE dispatch record (Auditoría: Físico antes de 20 min, Anulación después de 20 min - Enforces ownership or elevated role)
 router.delete('/:id', authenticateJWT, (req, res) => {
+    const dispatchId = req.params.id;
     const ip = req.ip || req.connection.remoteAddress;
     const userId = req.user.id;
 
-    db.get("SELECT order_number, createdAt FROM dispatches WHERE id = ?", [req.params.id], (err, row) => {
-        if (err) return res.status(500).json({ error: 'Error al verificar despacho: ' + err.message });
+    // 1. Validar ownership (IDOR)
+    db.get("SELECT order_number, createdAt, created_by FROM dispatches WHERE id = ?", [dispatchId], (err, row) => {
+        if (err) {
+            console.error('Error al verificar despacho para eliminación:', err);
+            return res.status(500).json({ error: 'Error al verificar el despacho.' });
+        }
         if (!row) return res.status(404).json({ error: 'Despacho no encontrado.' });
 
+        const hasElevatedPrivileges = ['Administrador', 'Superusuario', 'Supervisor'].includes(req.user.system_role);
+        if (!hasElevatedPrivileges && row.created_by !== userId) {
+            return res.status(403).json({ 
+                error: 'Acceso denegado. No tienes autorización para anular o eliminar registros creados por otros usuarios.' 
+            });
+        }
+
+        // 2. Proceder con la eliminación / anulación
         const orderNum = row.order_number;
         let createdDate = new Date();
         if (row.createdAt) {
@@ -338,17 +404,23 @@ router.delete('/:id', authenticateJWT, (req, res) => {
         const diffMins = diffMs / 1000 / 60;
 
         if (diffMins > 20) {
-            db.run("UPDATE dispatches SET status = 'Anulado' WHERE id = ?", [req.params.id], function(err) {
-                if (err) return res.status(500).json({ error: 'Error al anular despacho: ' + err.message });
+            db.run("UPDATE dispatches SET status = 'Anulado' WHERE id = ?", [dispatchId], function(err) {
+                if (err) {
+                    console.error('Error al anular despacho:', err);
+                    return res.status(500).json({ error: 'Error al anular el despacho.' });
+                }
                 invalidateCache();
-                db.logAudit(userId, 'DESPACHO_ANULADO', `Se anuló automáticamente el despacho ID ${req.params.id} (Orden: "${orderNum}") por superar el límite de 20 minutos.`, ip);
+                db.logAudit(userId, 'DESPACHO_ANULADO', `Se anuló automáticamente el despacho ID ${dispatchId} (Orden: "${orderNum}") por superar el límite de 20 minutos.`, ip);
                 res.json({ success: true, mode: 'annulled', changes: this.changes });
             });
         } else {
-            db.run("DELETE FROM dispatches WHERE id = ?", [req.params.id], function(err) {
-                if (err) return res.status(500).json({ error: 'Error al eliminar despacho: ' + err.message });
+            db.run("DELETE FROM dispatches WHERE id = ?", [dispatchId], function(err) {
+                if (err) {
+                    console.error('Error al eliminar despacho:', err);
+                    return res.status(500).json({ error: 'Error al eliminar el despacho del sistema.' });
+                }
                 invalidateCache();
-                db.logAudit(userId, 'DESPACHO_ELIMINADO', `Se eliminó físicamente el despacho ID ${req.params.id} (Orden: "${orderNum}") dentro del límite de 20 minutos.`, ip);
+                db.logAudit(userId, 'DESPACHO_ELIMINADO', `Se eliminó físicamente el despacho ID ${dispatchId} (Orden: "${orderNum}") dentro del límite de 20 minutos.`, ip);
                 res.json({ success: true, mode: 'deleted', changes: this.changes });
             });
         }

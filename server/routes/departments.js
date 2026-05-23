@@ -11,7 +11,10 @@ router.get('/', authenticateJWT, (req, res) => {
         LEFT JOIN users u ON d.manager_id = u.id
     `;
     db.all(query, [], (err, rows) => {
-        if (err) return res.status(500).json({ error: 'Error al obtener departamentos: ' + err.message });
+        if (err) {
+            console.error('Error al obtener departamentos:', err);
+            return res.status(500).json({ error: 'Error al obtener departamentos.' });
+        }
         res.json(rows);
     });
 });
@@ -24,10 +27,11 @@ router.post('/', authenticateJWT, requireRole(['Administrador']), (req, res) => 
     db.run("INSERT INTO departments (name, description, manager_id) VALUES (?, ?, ?)", 
     [name, description, manager_id || null], function(err) {
         if (err) {
-            if (err.message.includes('UNIQUE')) {
+            if (err.message && err.message.includes('UNIQUE')) {
                 return res.status(400).json({ error: 'Ya existe un departamento con ese nombre.' });
             }
-            return res.status(500).json({ error: 'Error al registrar departamento: ' + err.message });
+            console.error('Error al registrar departamento:', err);
+            return res.status(500).json({ error: 'Error al registrar departamento.' });
         }
         res.json({ id: this.lastID, name, description, manager_id });
     });
@@ -41,10 +45,11 @@ router.put('/:id', authenticateJWT, requireRole(['Administrador']), (req, res) =
     db.run("UPDATE departments SET name = ?, description = ?, manager_id = ? WHERE id = ?", 
     [name, description, manager_id || null, req.params.id], function(err) {
         if (err) {
-            if (err.message.includes('UNIQUE')) {
+            if (err.message && err.message.includes('UNIQUE')) {
                 return res.status(400).json({ error: 'Ya existe un departamento con ese nombre.' });
             }
-            return res.status(500).json({ error: 'Error al actualizar departamento: ' + err.message });
+            console.error('Error al actualizar departamento:', err);
+            return res.status(500).json({ error: 'Error al actualizar departamento.' });
         }
         res.json({ success: true, changes: this.changes });
     });
@@ -54,14 +59,14 @@ router.put('/:id', authenticateJWT, requireRole(['Administrador']), (req, res) =
 router.delete('/:id', authenticateJWT, requireRole(['Administrador']), (req, res) => {
     db.run("DELETE FROM departments WHERE id = ?", [req.params.id], function(err) {
         if (err) {
-            if (err.message.includes('FOREIGN KEY constraint failed')) {
+            if (err.message && err.message.includes('FOREIGN KEY constraint failed')) {
                 return res.status(400).json({ error: 'No se puede eliminar el departamento porque tiene cargos vinculados.' });
             }
-            return res.status(500).json({ error: 'Error al eliminar departamento: ' + err.message });
+            console.error('Error al eliminar departamento:', err);
+            return res.status(500).json({ error: 'Error al eliminar departamento.' });
         }
         res.json({ success: true, changes: this.changes });
     });
 });
 
 module.exports = router;
-

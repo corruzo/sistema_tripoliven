@@ -14,7 +14,10 @@ router.get('/', authenticateJWT, (req, res) => {
         LEFT JOIN departments d ON u.department_id = d.id
     `;
     db.all(query, [], (err, rows) => {
-        if (err) return res.status(500).json({ error: 'Error al obtener usuarios: ' + err.message });
+        if (err) {
+            console.error('Error al obtener usuarios:', err);
+            return res.status(500).json({ error: 'Error interno al obtener usuarios.' });
+        }
         res.json(rows);
     });
 });
@@ -33,10 +36,11 @@ router.post('/', authenticateJWT, requireRole(['Administrador']), (req, res) => 
     db.run("INSERT INTO users (name, email, username, password, system_role, status, position_id, department_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)", 
     [name, email, username, hashedPassword, system_role, status, position_id || null, department_id || null], function(err) {
         if (err) {
-            if (err.message.includes('UNIQUE')) {
+            if (err.message && err.message.includes('UNIQUE')) {
                 return res.status(400).json({ error: 'El correo electrónico o nombre de usuario ya existe.' });
             }
-            return res.status(500).json({ error: 'Error al registrar usuario: ' + err.message });
+            console.error('Error al registrar usuario:', err);
+            return res.status(500).json({ error: 'Error interno al registrar usuario.' });
         }
         
         // Log inmutable en el backend
@@ -67,10 +71,11 @@ router.put('/:id', authenticateJWT, requireRole(['Administrador']), (req, res) =
 
     db.run(query, params, function(err) {
         if (err) {
-            if (err.message.includes('UNIQUE')) {
+            if (err.message && err.message.includes('UNIQUE')) {
                 return res.status(400).json({ error: 'El correo electrónico o nombre de usuario ya existe.' });
             }
-            return res.status(500).json({ error: 'Error al actualizar usuario: ' + err.message });
+            console.error('Error al actualizar usuario:', err);
+            return res.status(500).json({ error: 'Error interno al actualizar usuario.' });
         }
         
         // Log inmutable en el backend
@@ -89,7 +94,10 @@ router.delete('/:id', authenticateJWT, requireRole(['Administrador']), (req, res
     }
 
     db.run("DELETE FROM users WHERE id = ?", [req.params.id], function(err) {
-        if (err) return res.status(500).json({ error: 'Error al eliminar usuario: ' + err.message });
+        if (err) {
+            console.error('Error al eliminar usuario:', err);
+            return res.status(500).json({ error: 'Error interno al eliminar usuario.' });
+        }
         
         // Log inmutable en el backend
         const ip = req.ip || req.connection.remoteAddress;
@@ -100,4 +108,3 @@ router.delete('/:id', authenticateJWT, requireRole(['Administrador']), (req, res
 });
 
 module.exports = router;
-

@@ -11,7 +11,10 @@ router.get('/', authenticateJWT, (req, res) => {
         LEFT JOIN departments d ON p.department_id = d.id
     `;
     db.all(query, [], (err, rows) => {
-        if (err) return res.status(500).json({ error: 'Error al obtener cargos: ' + err.message });
+        if (err) {
+            console.error('Error al obtener cargos:', err);
+            return res.status(500).json({ error: 'Error al obtener cargos.' });
+        }
         res.json(rows);
     });
 });
@@ -24,7 +27,10 @@ router.post('/', authenticateJWT, requireRole(['Administrador']), (req, res) => 
 
     db.run("INSERT INTO positions (name, department_id, description) VALUES (?, ?, ?)", 
     [name, department_id, description], function(err) {
-        if (err) return res.status(500).json({ error: 'Error al registrar cargo: ' + err.message });
+        if (err) {
+            console.error('Error al registrar cargo:', err);
+            return res.status(500).json({ error: 'Error al registrar cargo.' });
+        }
         res.json({ id: this.lastID, name, department_id, description });
     });
 });
@@ -37,7 +43,10 @@ router.put('/:id', authenticateJWT, requireRole(['Administrador']), (req, res) =
 
     db.run("UPDATE positions SET name = ?, department_id = ?, description = ? WHERE id = ?", 
     [name, department_id, description, req.params.id], function(err) {
-        if (err) return res.status(500).json({ error: 'Error al actualizar cargo: ' + err.message });
+        if (err) {
+            console.error('Error al actualizar cargo:', err);
+            return res.status(500).json({ error: 'Error al actualizar cargo.' });
+        }
         res.json({ success: true, changes: this.changes });
     });
 });
@@ -46,10 +55,11 @@ router.put('/:id', authenticateJWT, requireRole(['Administrador']), (req, res) =
 router.delete('/:id', authenticateJWT, requireRole(['Administrador']), (req, res) => {
     db.run("DELETE FROM positions WHERE id = ?", [req.params.id], function(err) {
         if (err) {
-            if (err.message.includes('FOREIGN KEY constraint failed')) {
+            if (err.message && err.message.includes('FOREIGN KEY constraint failed')) {
                 return res.status(400).json({ error: 'No se puede eliminar el cargo porque tiene usuarios vinculados.' });
             }
-            return res.status(500).json({ error: 'Error al eliminar cargo: ' + err.message });
+            console.error('Error al eliminar cargo:', err);
+            return res.status(500).json({ error: 'Error al eliminar cargo.' });
         }
         res.json({ success: true, changes: this.changes });
     });
