@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Layers, Plus, Edit2, Trash2, ShieldAlert, ArrowLeft, ChevronLeft, ChevronRight, Package, X } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { API_BASE_URL } from './config';
+import { normalizeApiListResponse } from './utils/api';
 
 const ProductTypes = () => {
   const [productTypes, setProductTypes] = useState([]);
@@ -37,7 +38,7 @@ const ProductTypes = () => {
       const res = await fetch(`${API_BASE_URL}/api/product-types`);
       if (!res.ok) throw new Error('Error al obtener los tipos de producto.');
       const data = await res.json();
-      setProductTypes(data || []);
+      setProductTypes(normalizeApiListResponse(data));
     } catch (err) {
       console.error(err);
       setError('Error al conectar con el servidor. Mostrando catálogo local de contingencia.');

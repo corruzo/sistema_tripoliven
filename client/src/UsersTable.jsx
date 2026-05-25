@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Trash2, Edit, UserPlus, X, ChevronLeft, ChevronRight, ShieldAlert } from 'lucide-react';
 import { API_BASE_URL } from './config';
+import { normalizeApiListResponse } from './utils/api';
 
 const UsersTable = () => {
   const [users, setUsers] = useState([]);
@@ -37,7 +38,7 @@ const UsersTable = () => {
         return res.json();
       })
       .then(data => {
-        setUsers(data || []);
+        setUsers(normalizeApiListResponse(data));
         setError(null);
         setLoading(false);
       })
@@ -56,7 +57,7 @@ const UsersTable = () => {
         }
         return res.json();
       })
-      .then(data => setPositions(data || []))
+      .then(data => setPositions(normalizeApiListResponse(data)))
       .catch(err => console.error('Error al cargar cargos para usuarios:', err));
   };
 
@@ -68,7 +69,7 @@ const UsersTable = () => {
         }
         return res.json();
       })
-      .then(data => setDepartments(data || []))
+      .then(data => setDepartments(normalizeApiListResponse(data)))
       .catch(err => console.error('Error al cargar departamentos para usuarios:', err));
   };
 

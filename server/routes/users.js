@@ -18,7 +18,7 @@ router.get('/', authenticateJWT, (req, res) => {
             console.error('Error al obtener usuarios:', err);
             return res.status(500).json({ error: 'Error interno al obtener usuarios.' });
         }
-        res.json(rows);
+        res.json({ data: rows || [] });
     });
 });
 

@@ -3,14 +3,27 @@ const router = express.Router();
 const db = require('../database');
 const { authenticateJWT, requireRole } = require('../middleware/authMiddleware');
 
-// Obtener todos los clientes (Solo Administrador, Superusuario, Supervisor)
+// Obtener todos los clientes con paginación opcional (Solo Administrador, Superusuario, Supervisor)
 router.get('/', authenticateJWT, requireRole(['Administrador', 'Superusuario', 'Supervisor']), (req, res) => {
-    db.all("SELECT * FROM clients ORDER BY createdAt DESC", [], (err, rows) => {
+    const page  = Math.max(1, parseInt(req.query.page)  || 1);
+    const limit = Math.min(500, Math.max(1, parseInt(req.query.limit) || 100));
+    const offset = (page - 1) * limit;
+
+    db.get("SELECT COUNT(*) as total FROM clients", [], (err, countRow) => {
         if (err) {
-            console.error('Error al obtener clientes:', err);
+            console.error('Error al contar clientes:', err);
             return res.status(500).json({ error: 'Error al obtener clientes del sistema.' });
         }
-        res.json(rows);
+        const total = countRow ? parseInt(countRow.total, 10) : 0;
+        const totalPages = Math.ceil(total / limit);
+
+        db.all("SELECT * FROM clients ORDER BY createdAt DESC LIMIT ? OFFSET ?", [limit, offset], (err, rows) => {
+            if (err) {
+                console.error('Error al obtener clientes:', err);
+                return res.status(500).json({ error: 'Error al obtener clientes del sistema.' });
+            }
+            res.json({ data: rows || [], total, page, limit, totalPages });
+        });
     });
 });
 
@@ -20,6 +33,14 @@ router.post('/', authenticateJWT, requireRole(['Administrador', 'Superusuario', 
 
     if (!name || name.trim() === '') {
         return res.status(400).json({ error: 'El Nombre es obligatorio.' });
+    }
+
+    // Validar RIF antes de procesar si ha sido suministrado y no es pendiente
+    if (rif && rif.trim() !== '' && !rif.startsWith('PENDIENTE-')) {
+        const rifPattern = /^(V|J|E|G)-\d{8}-\d$/i;
+        if (!rifPattern.test(rif.trim())) {
+            return res.status(400).json({ error: 'El RIF no es válido. Debe tener el formato correcto, ej: J-12345678-9, G-12345678-9, V-12345678-9 o E-12345678-9.' });
+        }
     }
 
     // Generate unique pending RIF if not provided
@@ -93,6 +114,14 @@ router.put('/:id', authenticateJWT, requireRole(['Administrador', 'Superusuario'
         return res.status(400).json({ error: 'El Nombre es obligatorio.' });
     }
 
+    // Validar RIF antes de procesar si ha sido suministrado y no es pendiente
+    if (rif && rif.trim() !== '' && !rif.startsWith('PENDIENTE-')) {
+        const rifPattern = /^(V|J|E|G)-\d{8}-\d$/i;
+        if (!rifPattern.test(rif.trim())) {
+            return res.status(400).json({ error: 'El RIF no es válido. Debe tener el formato correcto, ej: J-12345678-9, G-12345678-9, V-12345678-9 o E-12345678-9.' });
+        }
+    }
+
     if (!rif || rif.trim() === '') {
         rif = `PENDIENTE-${Date.now()}-${Math.floor(100 + Math.random() * 900)}`;
     }
@@ -162,14 +191,14 @@ router.delete('/:id', authenticateJWT, requireRole(['Administrador', 'Superusuar
 // Buscar clientes (Solo Administrador, Superusuario, Supervisor)
 router.get('/search', authenticateJWT, requireRole(['Administrador', 'Superusuario', 'Supervisor']), (req, res) => {
     const term = req.query.q;
-    if (!term) return res.json([]);
+    if (!term) return res.json({ data: [] });
     
     db.all("SELECT * FROM clients WHERE name LIKE ? OR rif LIKE ? LIMIT 10", [`%${term}%`, `%${term}%`], (err, rows) => {
         if (err) {
             console.error('Error al buscar clientes:', err);
             return res.status(500).json({ error: 'Error al buscar clientes en el sistema.' });
         }
-        res.json(rows);
+        res.json({ data: rows || [] });
     });
 });
 

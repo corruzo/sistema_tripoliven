@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Trash2, Edit, Plus, X, ChevronLeft, ChevronRight, ShieldAlert } from 'lucide-react';
 import { API_BASE_URL } from './config';
+import { normalizeApiListResponse } from './utils/api';
 
 const Positions = () => {
   const [positions, setPositions] = useState([]);
@@ -26,7 +27,7 @@ const Positions = () => {
         return res.json();
       })
       .then(data => {
-        setPositions(data || []);
+        setPositions(normalizeApiListResponse(data));
         setError(null);
         setLoading(false);
       })
@@ -45,7 +46,7 @@ const Positions = () => {
         }
         return res.json();
       })
-      .then(data => setDepartments(data || []))
+      .then(data => setDepartments(normalizeApiListResponse(data)))
       .catch(err => console.error('Error al cargar departamentos para cargos:', err));
   };
 

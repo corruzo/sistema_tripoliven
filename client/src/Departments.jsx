@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { normalizeApiListResponse } from './utils/api';
 import { Trash2, Edit, Plus, X, ChevronLeft, ChevronRight, ShieldAlert } from 'lucide-react';
 import { API_BASE_URL } from './config';
 
@@ -38,7 +39,7 @@ const Departments = () => {
         return res.json();
       })
       .then(data => {
-        setDepartments(data || []);
+        setDepartments(normalizeApiListResponse(data));
         setError(null);
         setLoading(false);
       })
@@ -57,7 +58,7 @@ const Departments = () => {
         }
         return res.json();
       })
-      .then(data => setUsers(data || []))
+      .then(data => setUsers(normalizeApiListResponse(data)))
       .catch(err => console.error('Error al cargar personal para departamentos:', err));
   };
 

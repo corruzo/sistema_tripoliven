@@ -15,7 +15,7 @@ router.get('/', authenticateJWT, (req, res) => {
             console.error('Error al obtener cargos:', err);
             return res.status(500).json({ error: 'Error al obtener cargos.' });
         }
-        res.json(rows);
+        res.json({ data: rows || [] });
     });
 });
 

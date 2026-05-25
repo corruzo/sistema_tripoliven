@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { API_BASE_URL } from './config';
 import { exportDispatchesToPDF } from './utils/pdfExport';
+import { normalizeApiListResponse } from './utils/api';
 import {
   Calendar, FileText, Download, Search, Filter, Layers,
   Users, TrendingUp, MapPin, Award, Clock, Package,
@@ -228,8 +229,14 @@ const Reports = () => {
           fetch(`${API_BASE_URL}/api/clients`),
           fetch(`${API_BASE_URL}/api/product-types`)
         ]);
-        if (cRes.ok) setClientsList(await cRes.json());
-        if (pRes.ok) setProductTypesList(await pRes.json());
+        if (cRes.ok) {
+          const clientsData = await cRes.json();
+          setClientsList(normalizeApiListResponse(clientsData));
+        }
+        if (pRes.ok) {
+          const productTypesData = await pRes.json();
+          setProductTypesList(normalizeApiListResponse(productTypesData));
+        }
       } catch (e) {
         console.error('Error cargando catálogos:', e);
       }
@@ -248,7 +255,8 @@ const Reports = () => {
       const url = `${API_BASE_URL}/api/dispatches${params.length ? '?' + params.join('&') : ''}`;
       const res = await fetch(url);
       if (!res.ok) throw new Error();
-      setDispatches(await res.json() || []);
+      const data = await res.json();
+      setDispatches(normalizeApiListResponse(data));
     } catch {
       setError('No se pudo conectar con el servidor. Verifica la conexión.');
     } finally {

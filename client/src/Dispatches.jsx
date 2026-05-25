@@ -1,12 +1,15 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { 
   Truck, Search, Calendar, FileText, Plus, Edit2, Trash2, 
   ChevronRight, ChevronLeft, Download, Filter, TrendingUp, Package, MapPin, 
-  Layers, Users, ShieldAlert, CheckCircle2, Clock, MoreVertical, Eye, Ban, X, Building2
+  Layers, Users, ShieldAlert, CheckCircle2, Clock, MoreVertical, Eye, Ban, X, Building2,
+  AlertTriangle, ShieldOff, ArrowUpDown, ArrowUp, ArrowDown
 } from 'lucide-react';
-import { exportDispatchesToPDF } from './utils/pdfExport';
+import { exportDispatchesToPDF, generateDispatchesPDF } from './utils/pdfExport';
+import PDFPreviewModal from './utils/PDFPreviewModal';
 import { API_BASE_URL } from './config';
+import { normalizeApiListResponse } from './utils/api';
 
 // Devuelve la fecha local del sistema en formato YYYY-MM-DD (sin desfase UTC)
 const getLocalDateStr = () => {
@@ -27,6 +30,13 @@ const Dispatches = () => {
   const [selectedDispatchDetails, setSelectedDispatchDetails] = useState(null);
   const [statusMenuPos, setStatusMenuPos] = useState(null);
   const [statusMenuDispatch, setStatusMenuDispatch] = useState(null);
+
+  // Modal corporativo de anulación histórica
+  const [annulModalDispatch, setAnnulModalDispatch] = useState(null);
+  const [annulModalMode, setAnnulModalMode] = useState('delete'); // 'delete' | 'annul'
+  const [annulLoading, setAnnulLoading] = useState(false);
+  const [annulBtnHover, setAnnulBtnHover] = useState(false);
+  const annulBtnRef = useRef(null);
 
   useEffect(() => {
     const handleDocClick = () => {
@@ -61,6 +71,12 @@ const Dispatches = () => {
   const [pdfClient, setPdfClient] = useState('Todos');
   const [pdfStatus, setPdfStatus] = useState('Todos');
 
+  // PDF Preview Modal States
+  const [pdfPreviewUrl, setPdfPreviewUrl] = useState(null);
+  const [pdfBlob, setPdfBlob] = useState(null);
+  const [isPdfModalOpen, setIsPdfModalOpen] = useState(false);
+  const [pdfFilename, setPdfFilename] = useState('');
+
   // Obtener valores únicos dinámicos para los filtros a partir de los despachos cargados
   const uniqueClients = useMemo(() => {
     const clients = dispatches.map(d => d.client_name).filter(Boolean);
@@ -77,14 +93,61 @@ const Dispatches = () => {
   // Control de visualización de gráficos
   const [showCharts, setShowCharts] = useState(true);
 
-  // Paginación
+  // Paginación y Ordenamiento
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10;
+  const [sortConfig, setSortConfig] = useState({ key: null, direction: 'asc' });
+
+  const requestSort = (key) => {
+    let direction = 'asc';
+    if (sortConfig.key === key && sortConfig.direction === 'asc') {
+      direction = 'desc';
+    } else if (sortConfig.key === key && sortConfig.direction === 'desc') {
+      key = null;
+    }
+    setSortConfig({ key, direction });
+  };
+
+  const getSortIcon = (key) => {
+    if (sortConfig.key !== key) {
+      return <ArrowUpDown size={12} style={{ opacity: 0.3, marginLeft: '6px' }} />;
+    }
+    return sortConfig.direction === 'asc' 
+      ? <ArrowUp size={12} style={{ marginLeft: '6px', color: 'var(--accent-primary)' }} /> 
+      : <ArrowDown size={12} style={{ marginLeft: '6px', color: 'var(--accent-primary)' }} />;
+  };
+
+  const sortedDispatches = useMemo(() => {
+    let sortableItems = [...filteredDispatches];
+    if (sortConfig.key !== null) {
+      sortableItems.sort((a, b) => {
+        let aValue = a[sortConfig.key];
+        let bValue = b[sortConfig.key];
+
+        if (sortConfig.key === 'quantity_tm') {
+          aValue = Number(aValue) || 0;
+          bValue = Number(bValue) || 0;
+        } else {
+          aValue = (aValue || '').toString().toLowerCase();
+          bValue = (bValue || '').toString().toLowerCase();
+        }
+
+        if (aValue < bValue) {
+          return sortConfig.direction === 'asc' ? -1 : 1;
+        }
+        if (aValue > bValue) {
+          return sortConfig.direction === 'asc' ? 1 : -1;
+        }
+        return 0;
+      });
+    }
+    return sortableItems;
+  }, [filteredDispatches, sortConfig]);
 
   const totalPages = Math.ceil(filteredDispatches.length / itemsPerPage);
   const indexOfLastItem = currentPage * itemsPerPage;
   const indexOfFirstItem = indexOfLastItem - itemsPerPage;
-  const currentDispatches = filteredDispatches.slice(indexOfFirstItem, indexOfLastItem);
+  const currentDispatches = sortedDispatches.slice(indexOfFirstItem, indexOfLastItem);
 
   useEffect(() => {
     if (currentPage > totalPages && totalPages > 0) {
@@ -101,7 +164,7 @@ const Dispatches = () => {
       const res = await fetch(`${API_BASE_URL}/api/product-types`);
       if (res.ok) {
         const data = await res.json();
-        setProductTypesList(data);
+        setProductTypesList(normalizeApiListResponse(data));
       }
     } catch (err) {
       console.error('Error al cargar tipos de producto:', err);
@@ -113,7 +176,7 @@ const Dispatches = () => {
       const res = await fetch(`${API_BASE_URL}/api/clients`);
       if (res.ok) {
         const data = await res.json();
-        setClientsList(data);
+        setClientsList(normalizeApiListResponse(data));
       }
     } catch (err) {
       console.error('Error al cargar clientes:', err);
@@ -134,8 +197,9 @@ const Dispatches = () => {
       const res = await fetch(url);
       if (!res.ok) throw new Error('Error al conectar con la base de datos');
       const data = await res.json();
-      setDispatches(data);
-      setFilteredDispatches(data);
+      const rows = normalizeApiListResponse(data);
+      setDispatches(rows);
+      setFilteredDispatches(rows);
     } catch (err) {
       console.error(err);
       setError('No se pudo conectar al servidor. Mostrando datos locales de resguardo.');
@@ -193,25 +257,30 @@ const Dispatches = () => {
 
   // (Eliminado handleOpenModal y handleSave ya que ahora usan el componente DispatchForm independiente)
 
-  const handleDelete = async (disp) => {
-    // Calcular minutos transcurridos en cliente para retroalimentación visual al usuario
-    // createdAt se guarda en hora local del servidor; parseamos sin 'Z' para mantener consistencia
+  const handleDelete = (disp) => {
+    // Calcular minutos transcurridos para determinar si es eliminación física o anulación
     const createdLocalStr = disp.createdAt ? disp.createdAt.replace(' ', 'T') : null;
     const createdDate = createdLocalStr ? new Date(createdLocalStr) : new Date();
-    const now = new Date();
-    const diffMs = now - createdDate;
-    const diffMins = diffMs / 1000 / 60;
+    const diffMins = (new Date() - createdDate) / 1000 / 60;
 
-    let confirmMsg = '¿Seguro que deseas eliminar este registro de despacho? Esta acción no se puede deshacer.';
     if (diffMins > 20) {
-      confirmMsg = 'Han transcurrido más de 20 minutos desde el registro. Para mantener la integridad de auditoría, el despacho no se eliminará físicamente, sino que se ANULARÁ en el sistema y no contará para estadísticas. ¿Deseas continuar?';
+      // Registro histórico: mostrar modal corporativo de anulación
+      setAnnulModalDispatch(disp);
+      setAnnulModalMode('annul');
+    } else {
+      // Registro reciente: mostrar modal de eliminación física
+      setAnnulModalDispatch(disp);
+      setAnnulModalMode('delete');
     }
+  };
 
-    if (!window.confirm(confirmMsg)) return;
-
+  const handleConfirmAnnulModal = async () => {
+    if (!annulModalDispatch) return;
+    setAnnulLoading(true);
     try {
-      const res = await fetch(`${API_BASE_URL}/api/dispatches/${disp.id}`, { method: 'DELETE' });
+      const res = await fetch(`${API_BASE_URL}/api/dispatches/${annulModalDispatch.id}`, { method: 'DELETE' });
       if (res.ok) {
+        setAnnulModalDispatch(null);
         loadDispatches();
       } else {
         const data = await res.json();
@@ -220,6 +289,8 @@ const Dispatches = () => {
     } catch (err) {
       console.error(err);
       alert('Error al conectar con el servidor.');
+    } finally {
+      setAnnulLoading(false);
     }
   };
 
@@ -253,7 +324,7 @@ const Dispatches = () => {
   };
 
   // Exportar a PDF corporativo con filtros avanzados o vista actual
-  const handleExecutePDFExport = () => {
+  const handleExecutePDFExport = async () => {
     let dataToExport = [];
     let startD = '';
     let endD = '';
@@ -301,15 +372,45 @@ const Dispatches = () => {
     const activeForMetrics = dataToExport.filter(d => d.status !== 'Anulado');
     const computedTotal = activeForMetrics.reduce((sum, d) => sum + Number(d.quantity_tm || 0), 0);
 
-    exportDispatchesToPDF(
-      dataToExport,
-      startD,
-      endD,
-      computedTotal,
-      filtersObj
-    );
+    const btn = document.activeElement;
+    const originalText = btn?.textContent;
+    if (btn && btn.tagName === 'BUTTON') {
+      btn.disabled = true;
+      btn.textContent = 'Generando vista previa...';
+    }
 
-    setShowExportModal(false);
+    try {
+      const blob = await generateDispatchesPDF(
+        dataToExport,
+        startD || 'Historico',
+        endD || 'Historico',
+        computedTotal,
+        'general'
+      );
+      const url = URL.createObjectURL(blob);
+      setPdfBlob(blob);
+      setPdfPreviewUrl(url);
+      setPdfFilename(`Reporte_Despachos_${getLocalDateStr()}.pdf`);
+      setIsPdfModalOpen(true);
+      setShowExportModal(false);
+    } catch (err) {
+      console.error(err);
+      alert(`Error al generar la vista previa del PDF: ${err.message}`);
+    } finally {
+      if (btn && btn.tagName === 'BUTTON') {
+        btn.disabled = false;
+        if (originalText) btn.textContent = originalText;
+      }
+    }
+  };
+
+  const closePdfModal = () => {
+    setIsPdfModalOpen(false);
+    if (pdfPreviewUrl) {
+      URL.revokeObjectURL(pdfPreviewUrl);
+      setPdfPreviewUrl(null);
+    }
+    setPdfBlob(null);
   };
 
   // ----------------------------------------------------
@@ -731,12 +832,60 @@ const Dispatches = () => {
             <table className="modern-table" style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
               <thead>
                 <tr style={{ background: 'rgba(255,255,255,0.02)', borderBottom: '1px solid var(--glass-border)' }}>
-                  <th style={{ padding: '16px 20px', fontSize: '0.8rem', textTransform: 'uppercase', color: 'var(--text-secondary)' }}>Cliente</th>
-                  <th style={{ padding: '16px 20px', fontSize: '0.8rem', textTransform: 'uppercase', color: 'var(--text-secondary)' }}>Producto</th>
-                  <th style={{ padding: '16px 20px', fontSize: '0.8rem', textTransform: 'uppercase', color: 'var(--text-secondary)' }}>Cant (TM)</th>
-                  <th style={{ padding: '16px 20px', fontSize: '0.8rem', textTransform: 'uppercase', color: 'var(--text-secondary)' }}>Destino</th>
-                  <th style={{ padding: '16px 20px', fontSize: '0.8rem', textTransform: 'uppercase', color: 'var(--text-secondary)' }}>Fecha</th>
-                  <th style={{ padding: '16px 20px', fontSize: '0.8rem', textTransform: 'uppercase', color: 'var(--text-secondary)' }}>Estatus</th>
+                  <th 
+                    onClick={() => requestSort('client_name')}
+                    style={{ padding: '16px 20px', fontSize: '0.8rem', textTransform: 'uppercase', color: 'var(--text-secondary)', cursor: 'pointer', userSelect: 'none' }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center' }}>
+                      <span>Cliente</span>
+                      {getSortIcon('client_name')}
+                    </div>
+                  </th>
+                  <th 
+                    onClick={() => requestSort('product_type')}
+                    style={{ padding: '16px 20px', fontSize: '0.8rem', textTransform: 'uppercase', color: 'var(--text-secondary)', cursor: 'pointer', userSelect: 'none' }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center' }}>
+                      <span>Producto</span>
+                      {getSortIcon('product_type')}
+                    </div>
+                  </th>
+                  <th 
+                    onClick={() => requestSort('quantity_tm')}
+                    style={{ padding: '16px 20px', fontSize: '0.8rem', textTransform: 'uppercase', color: 'var(--text-secondary)', cursor: 'pointer', userSelect: 'none' }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center' }}>
+                      <span>Cant (TM)</span>
+                      {getSortIcon('quantity_tm')}
+                    </div>
+                  </th>
+                  <th 
+                    onClick={() => requestSort('destination_state')}
+                    style={{ padding: '16px 20px', fontSize: '0.8rem', textTransform: 'uppercase', color: 'var(--text-secondary)', cursor: 'pointer', userSelect: 'none' }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center' }}>
+                      <span>Destino</span>
+                      {getSortIcon('destination_state')}
+                    </div>
+                  </th>
+                  <th 
+                    onClick={() => requestSort('dispatch_datetime')}
+                    style={{ padding: '16px 20px', fontSize: '0.8rem', textTransform: 'uppercase', color: 'var(--text-secondary)', cursor: 'pointer', userSelect: 'none' }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center' }}>
+                      <span>Fecha</span>
+                      {getSortIcon('dispatch_datetime')}
+                    </div>
+                  </th>
+                  <th 
+                    onClick={() => requestSort('status')}
+                    style={{ padding: '16px 20px', fontSize: '0.8rem', textTransform: 'uppercase', color: 'var(--text-secondary)', cursor: 'pointer', userSelect: 'none' }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center' }}>
+                      <span>Estatus</span>
+                      {getSortIcon('status')}
+                    </div>
+                  </th>
                   <th style={{ padding: '16px 20px', fontSize: '0.8rem', textTransform: 'uppercase', color: 'var(--text-secondary)', textAlign: 'right' }}>Acciones</th>
                 </tr>
               </thead>
@@ -1229,6 +1378,329 @@ const Dispatches = () => {
               >
                 <Download size={16} /> Generar PDF
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ══════════════════════════════════════════════════════════════════ */}
+      {/* MODAL CORPORATIVO DE ANULACIÓN / ELIMINACIÓN HISTÓRICA           */}
+      {/* ══════════════════════════════════════════════════════════════════ */}
+      {annulModalDispatch && (
+        <div
+          onClick={() => { if (!annulLoading) setAnnulModalDispatch(null); }}
+          style={{
+            position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+            background: 'rgba(0,0,0,0.75)',
+            backdropFilter: 'blur(14px)',
+            WebkitBackdropFilter: 'blur(14px)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            zIndex: 10000, padding: '20px',
+            animation: 'fadeInBackdrop 0.2s ease'
+          }}
+        >
+          <style>{`
+            @keyframes fadeInBackdrop { from { opacity: 0; } to { opacity: 1; } }
+            @keyframes slideUpModal {
+              from { opacity: 0; transform: translateY(32px) scale(0.97); }
+              to   { opacity: 1; transform: translateY(0)    scale(1);    }
+            }
+            @keyframes pulseDanger {
+              0%,100% { box-shadow: 0 0 0 0 rgba(239,68,68,0.35); }
+              50%      { box-shadow: 0 0 0 10px rgba(239,68,68,0); }
+            }
+            @keyframes rotateBadge {
+              0%   { transform: rotate(-3deg) scale(1);   }
+              50%  { transform: rotate(3deg)  scale(1.05); }
+              100% { transform: rotate(-3deg) scale(1);   }
+            }
+          `}</style>
+
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              background: 'linear-gradient(145deg, #0f172a 0%, #1e293b 100%)',
+              border: annulModalMode === 'annul'
+                ? '1px solid rgba(239,68,68,0.4)'
+                : '1px solid rgba(248,113,113,0.25)',
+              borderRadius: '28px',
+              padding: '0',
+              width: '660px',
+              maxWidth: '100%',
+              boxShadow: annulModalMode === 'annul'
+                ? '0 32px 72px rgba(0,0,0,0.7), 0 0 0 1px rgba(239,68,68,0.15), inset 0 1px 0 rgba(255,255,255,0.04)'
+                : '0 32px 72px rgba(0,0,0,0.7), inset 0 1px 0 rgba(255,255,255,0.04)',
+              maxHeight: '92vh',
+              overflowY: 'auto',
+              animation: 'slideUpModal 0.28s cubic-bezier(0.34,1.56,0.64,1)'
+            }}
+          >
+            {/* ── CABECERA DEGRADADA ── */}
+            <div style={{
+              padding: '28px 32px 24px',
+              background: annulModalMode === 'annul'
+                ? 'linear-gradient(135deg, rgba(239,68,68,0.12) 0%, rgba(239,68,68,0.04) 100%)'
+                : 'linear-gradient(135deg, rgba(248,113,113,0.08) 0%, rgba(0,0,0,0) 100%)',
+              borderBottom: '1px solid rgba(255,255,255,0.05)',
+              borderRadius: '28px 28px 0 0',
+              display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '16px'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '18px' }}>
+                {/* Ícono animado */}
+                <div style={{
+                  width: '60px', height: '60px', borderRadius: '18px', flexShrink: 0,
+                  background: annulModalMode === 'annul'
+                    ? 'linear-gradient(135deg, rgba(239,68,68,0.25), rgba(239,68,68,0.1))'
+                    : 'linear-gradient(135deg, rgba(248,113,113,0.2), rgba(248,113,113,0.08))',
+                  border: annulModalMode === 'annul' ? '1px solid rgba(239,68,68,0.4)' : '1px solid rgba(248,113,113,0.3)',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  animation: 'rotateBadge 3s ease-in-out infinite'
+                }}>
+                  {annulModalMode === 'annul'
+                    ? <ShieldOff size={28} color="#f87171" />
+                    : <AlertTriangle size={28} color="#fca5a5" />}
+                </div>
+                <div>
+                  {/* Etiqueta superior */}
+                  <div style={{
+                    fontSize: '0.7rem', fontWeight: '800', letterSpacing: '2px',
+                    textTransform: 'uppercase', marginBottom: '4px',
+                    color: annulModalMode === 'annul' ? '#f87171' : '#fca5a5',
+                    display: 'flex', alignItems: 'center', gap: '6px'
+                  }}>
+                    <span style={{
+                      width: '6px', height: '6px', borderRadius: '50%',
+                      background: annulModalMode === 'annul' ? '#ef4444' : '#f87171',
+                      display: 'inline-block',
+                      animation: 'pulseDanger 1.6s ease-in-out infinite'
+                    }} />
+                    TripoliERP &mdash; {annulModalMode === 'annul' ? 'Anulación Histórica' : 'Eliminación de Registro'}
+                  </div>
+                  <h2 style={{
+                    margin: 0, fontSize: '1.45rem', fontWeight: '800', color: 'white',
+                    lineHeight: 1.2
+                  }}>
+                    {annulModalMode === 'annul'
+                      ? 'Confirmar Anulación de Orden'
+                      : 'Confirmar Eliminación de Registro'}
+                  </h2>
+                  <p style={{ margin: '6px 0 0', fontSize: '0.85rem', color: 'rgba(255,255,255,0.5)', lineHeight: 1.5 }}>
+                    {annulModalMode === 'annul'
+                      ? 'Han transcurrido más de 20 minutos desde el registro. Esta operación es auditada y no se puede revertir.'
+                      : 'Este registro fue creado recientemente. La eliminación es permanente e irreversible.'}
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => { if (!annulLoading) setAnnulModalDispatch(null); }}
+                style={{
+                  background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)',
+                  color: 'rgba(255,255,255,0.4)', cursor: annulLoading ? 'not-allowed' : 'pointer',
+                  padding: '8px', borderRadius: '10px', display: 'flex', alignItems: 'center',
+                  justifyContent: 'center', transition: 'all 0.2s', flexShrink: 0
+                }}
+                onMouseOver={e => { if (!annulLoading) { e.currentTarget.style.color = 'white'; e.currentTarget.style.background = 'rgba(255,255,255,0.08)'; } }}
+                onMouseOut={e => { e.currentTarget.style.color = 'rgba(255,255,255,0.4)'; e.currentTarget.style.background = 'rgba(255,255,255,0.04)'; }}
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* ── CUERPO: DATOS ESTRUCTURADOS DEL DESPACHO ── */}
+            <div style={{ padding: '24px 32px' }}>
+
+              {/* Alerta de advertencia */}
+              {annulModalMode === 'annul' && (
+                <div style={{
+                  display: 'flex', alignItems: 'flex-start', gap: '14px',
+                  background: 'rgba(239,68,68,0.08)',
+                  border: '1px solid rgba(239,68,68,0.22)',
+                  borderRadius: '14px', padding: '16px 18px', marginBottom: '22px'
+                }}>
+                  <AlertTriangle size={20} color="#fca5a5" style={{ flexShrink: 0, marginTop: '1px' }} />
+                  <p style={{ margin: 0, fontSize: '0.84rem', color: '#fca5a5', lineHeight: 1.6 }}>
+                    El despacho <strong style={{ color: '#f87171' }}>#{annulModalDispatch.order_number}</strong> quedará
+                    con estatus <strong style={{ color: '#f87171' }}>ANULADO</strong> en el sistema.
+                    No se eliminará físicamente y continuará visible en el historial de auditoría,
+                    pero <strong>no contará</strong> para estadísticas ni reportes de volumen.
+                  </p>
+                </div>
+              )}
+
+              {/* Grid de datos del despacho */}
+              <div style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+                gap: '12px',
+                marginBottom: '24px'
+              }}>
+                {/* Número de Orden */}
+                <div style={{
+                  background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)',
+                  borderRadius: '14px', padding: '14px 16px'
+                }}>
+                  <div style={{ fontSize: '0.7rem', color: 'rgba(255,255,255,0.35)', fontWeight: '700', letterSpacing: '1.2px', textTransform: 'uppercase', marginBottom: '6px' }}>Nº de Orden</div>
+                  <div style={{ fontSize: '1.1rem', fontWeight: '800', color: 'white', letterSpacing: '0.5px', fontFamily: 'monospace' }}>
+                    {annulModalDispatch.order_number}
+                  </div>
+                </div>
+
+                {/* Cliente */}
+                <div style={{
+                  background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)',
+                  borderRadius: '14px', padding: '14px 16px'
+                }}>
+                  <div style={{ fontSize: '0.7rem', color: 'rgba(255,255,255,0.35)', fontWeight: '700', letterSpacing: '1.2px', textTransform: 'uppercase', marginBottom: '6px', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                    <Building2 size={12} /> Cliente
+                  </div>
+                  <div style={{ fontSize: '0.95rem', fontWeight: '700', color: 'white', marginBottom: '2px' }}>
+                    {annulModalDispatch.client_name || '—'}
+                  </div>
+                  <div style={{ fontSize: '0.78rem', color: 'rgba(255,255,255,0.4)' }}>
+                    RIF: {annulModalDispatch.client_rif || 'No registrado'}
+                  </div>
+                </div>
+
+                {/* Producto */}
+                <div style={{
+                  background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)',
+                  borderRadius: '14px', padding: '14px 16px'
+                }}>
+                  <div style={{ fontSize: '0.7rem', color: 'rgba(255,255,255,0.35)', fontWeight: '700', letterSpacing: '1.2px', textTransform: 'uppercase', marginBottom: '6px', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                    <Package size={12} /> Producto y Volumen
+                  </div>
+                  <div style={{ fontSize: '0.95rem', fontWeight: '700', color: 'white', marginBottom: '2px' }}>
+                    {annulModalDispatch.product_type}
+                  </div>
+                  <div style={{ fontSize: '0.9rem', fontWeight: '800', color: '#34d399' }}>
+                    {Number(annulModalDispatch.quantity_tm).toFixed(2)} TM
+                  </div>
+                </div>
+
+                {/* Destino */}
+                <div style={{
+                  background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)',
+                  borderRadius: '14px', padding: '14px 16px'
+                }}>
+                  <div style={{ fontSize: '0.7rem', color: 'rgba(255,255,255,0.35)', fontWeight: '700', letterSpacing: '1.2px', textTransform: 'uppercase', marginBottom: '6px', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                    <MapPin size={12} /> Destino
+                  </div>
+                  <div style={{ fontSize: '0.95rem', fontWeight: '700', color: 'white' }}>
+                    {annulModalDispatch.destination_state || '—'}
+                  </div>
+                </div>
+
+                {/* Chofer y Placa */}
+                {(annulModalDispatch.driver_name || annulModalDispatch.license_plate) && (
+                  <div style={{
+                    background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)',
+                    borderRadius: '14px', padding: '14px 16px'
+                  }}>
+                    <div style={{ fontSize: '0.7rem', color: 'rgba(255,255,255,0.35)', fontWeight: '700', letterSpacing: '1.2px', textTransform: 'uppercase', marginBottom: '6px', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                      <Truck size={12} /> Transporte
+                    </div>
+                    <div style={{ fontSize: '0.9rem', fontWeight: '700', color: 'white', marginBottom: '2px' }}>
+                      {annulModalDispatch.driver_name || 'Sin asignar'}
+                    </div>
+                    {annulModalDispatch.license_plate && (
+                      <div style={{ fontSize: '0.8rem', color: '#818cf8', fontWeight: '600', fontFamily: 'monospace' }}>
+                        {annulModalDispatch.license_plate}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Fecha de despacho */}
+                <div style={{
+                  background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)',
+                  borderRadius: '14px', padding: '14px 16px'
+                }}>
+                  <div style={{ fontSize: '0.7rem', color: 'rgba(255,255,255,0.35)', fontWeight: '700', letterSpacing: '1.2px', textTransform: 'uppercase', marginBottom: '6px', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                    <Clock size={12} /> Fecha de Despacho
+                  </div>
+                  <div style={{ fontSize: '0.88rem', fontWeight: '600', color: 'rgba(255,255,255,0.75)' }}>
+                    {annulModalDispatch.dispatch_datetime
+                      ? annulModalDispatch.dispatch_datetime.replace('T', ' ').slice(0, 16)
+                      : '—'}
+                  </div>
+                </div>
+              </div>
+
+              {/* Separador */}
+              <div style={{ borderTop: '1px solid rgba(255,255,255,0.05)', marginBottom: '22px' }} />
+
+              {/* Botones de acción */}
+              <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end', alignItems: 'center' }}>
+                <button
+                  onClick={() => { if (!annulLoading) setAnnulModalDispatch(null); }}
+                  disabled={annulLoading}
+                  style={{
+                    background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.1)',
+                    color: 'rgba(255,255,255,0.55)', padding: '12px 24px', borderRadius: '14px',
+                    cursor: annulLoading ? 'not-allowed' : 'pointer', fontWeight: '700', fontSize: '0.9rem',
+                    transition: 'all 0.2s', opacity: annulLoading ? 0.5 : 1
+                  }}
+                  onMouseOver={e => { if (!annulLoading) { e.currentTarget.style.color = 'white'; e.currentTarget.style.background = 'rgba(255,255,255,0.08)'; } }}
+                  onMouseOut={e => { e.currentTarget.style.color = 'rgba(255,255,255,0.55)'; e.currentTarget.style.background = 'rgba(255,255,255,0.04)'; }}
+                >
+                  Cancelar
+                </button>
+
+                <button
+                  ref={annulBtnRef}
+                  onClick={handleConfirmAnnulModal}
+                  disabled={annulLoading}
+                  onMouseEnter={() => setAnnulBtnHover(true)}
+                  onMouseLeave={() => setAnnulBtnHover(false)}
+                  style={{
+                    background: annulBtnHover
+                      ? 'linear-gradient(135deg, #dc2626 0%, #b91c1c 100%)'
+                      : 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)',
+                    border: 'none',
+                    color: 'white',
+                    padding: '12px 28px',
+                    borderRadius: '14px',
+                    cursor: annulLoading ? 'not-allowed' : 'pointer',
+                    fontWeight: '800',
+                    fontSize: '0.9rem',
+                    display: 'flex', alignItems: 'center', gap: '10px',
+                    boxShadow: annulBtnHover
+                      ? '0 8px 28px rgba(239,68,68,0.5), 0 0 0 3px rgba(239,68,68,0.2)'
+                      : '0 8px 24px rgba(239,68,68,0.35)',
+                    transform: annulBtnHover ? 'translateY(-1px)' : 'translateY(0)',
+                    transition: 'all 0.18s cubic-bezier(0.34,1.56,0.64,1)',
+                    opacity: annulLoading ? 0.7 : 1,
+                    animation: !annulLoading ? 'pulseDanger 2.4s ease-in-out infinite' : 'none'
+                  }}
+                >
+                  {annulLoading ? (
+                    <>
+                      <span style={{
+                        width: '16px', height: '16px', border: '2px solid rgba(255,255,255,0.3)',
+                        borderTopColor: 'white', borderRadius: '50%',
+                        animation: 'spin 0.7s linear infinite',
+                        display: 'inline-block'
+                      }} />
+                      Procesando...
+                    </>
+                  ) : (
+                    <>
+                      {annulModalMode === 'annul' ? <ShieldOff size={18} /> : <Trash2 size={18} />}
+                      {annulModalMode === 'annul' ? 'Confirmar Anulación' : 'Eliminar Definitivamente'}
+                    </>
+                  )}
+                </button>
+              </div>
+
+              {/* Nota legal al pie */}
+              <p style={{
+                margin: '18px 0 0', textAlign: 'center',
+                fontSize: '0.73rem', color: 'rgba(255,255,255,0.2)', lineHeight: 1.5
+              }}>
+                {annulModalMode === 'annul'
+                  ? '⚠ Esta acción queda registrada en el log de auditoría del sistema con tu usuario e IP.'
+                  : '⚠ La eliminación es permanente. Úsala sólo dentro del período de gracia de 20 minutos.'}
+              </p>
             </div>
           </div>
         </div>

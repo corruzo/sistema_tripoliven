@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { Truck, Save, ArrowLeft, Plus, X, Search, CheckCircle2, Building2, User, Phone, MapPin } from 'lucide-react';
 import { API_BASE_URL } from './config';
+import { normalizeApiListResponse } from './utils/api';
 
 const VENEZUELA_STATES = [
     'Amazonas', 'Anzoátegui', 'Apure', 'Aragua', 'Barinas', 'Bolívar', 'Carabobo', 'Cojedes', 
@@ -15,6 +16,30 @@ const getLocalDateStr = () => {
     const m = String(now.getMonth() + 1).padStart(2, '0');
     const d = String(now.getDate()).padStart(2, '0');
     return `${y}-${m}-${d}`;
+};
+
+// Cifrado y descifrado XOR + Base64 para el borrador del localStorage
+const encryptDraft = (text) => {
+    const key = 'TRIPOLIVEN_ERP_2026_SALT';
+    let result = '';
+    for (let i = 0; i < text.length; i++) {
+        result += String.fromCharCode(text.charCodeAt(i) ^ key.charCodeAt(i % key.length));
+    }
+    return btoa(unescape(encodeURIComponent(result)));
+};
+
+const decryptDraft = (encoded) => {
+    try {
+        const key = 'TRIPOLIVEN_ERP_2026_SALT';
+        const text = decodeURIComponent(escape(atob(encoded)));
+        let result = '';
+        for (let i = 0; i < text.length; i++) {
+            result += String.fromCharCode(text.charCodeAt(i) ^ key.charCodeAt(i % key.length));
+        }
+        return result;
+    } catch (e) {
+        return null;
+    }
 };
 
 export default function DispatchForm() {
@@ -33,6 +58,15 @@ export default function DispatchForm() {
     const [showSuggestions, setShowSuggestions] = useState(false);
     const [selectedClientObj, setSelectedClientObj] = useState(null);
     const searchRef = useRef(null);
+
+    // Sugerencias de chofer y placa
+    const [historicalSuggestions, setHistoricalSuggestions] = useState({ drivers: [], plates: [] });
+    const [driverSuggestions, setDriverSuggestions] = useState([]);
+    const [plateSuggestions, setPlateSuggestions] = useState([]);
+    const [showDriverSuggestions, setShowDriverSuggestions] = useState(false);
+    const [showPlateSuggestions, setShowPlateSuggestions] = useState(false);
+    const driverRef = useRef(null);
+    const plateRef = useRef(null);
 
     const [formData, setFormData] = useState({
         client_id: '',
@@ -57,6 +91,18 @@ export default function DispatchForm() {
     const [orderNumberError, setOrderNumberError] = useState('');
     const [checkingOrderNumber, setCheckingOrderNumber] = useState(false);
 
+    const loadSuggestions = async () => {
+        try {
+            const res = await fetch(`${API_BASE_URL}/api/dispatches/suggestions`);
+            if (res.ok) {
+                const data = await res.json();
+                setHistoricalSuggestions(data || { drivers: [], plates: [] });
+            }
+        } catch (err) {
+            console.error('Error al cargar sugerencias históricas:', err);
+        }
+    };
+
     useEffect(() => {
         const init = async () => {
             if (isEdit) {
@@ -65,14 +111,19 @@ export default function DispatchForm() {
             } else {
                 await Promise.all([loadProductTypes(), loadClients()]);
                 await generateDefaults();
-                // Check borrador al iniciar un nuevo despacho
-                const draftStr = localStorage.getItem('tripoliven_dispatch_draft');
-                if (draftStr) {
+                await loadSuggestions(); // Cargar sugerencias
+                
+                // Check borrador al iniciar un nuevo despacho (Descifrado seguro)
+                const encryptedDraft = localStorage.getItem('tripoliven_dispatch_draft');
+                if (encryptedDraft) {
                     try {
-                        const draft = JSON.parse(draftStr);
-                        if (draft && draft.formData && (draft.formData.client_id || draft.formData.quantity_tm || draft.formData.driver_name || draft.formData.license_plate || draft.formData.order_number)) {
-                            setSavedDraftData(draft);
-                            setShowDraftBanner(true);
+                        const decrypted = decryptDraft(encryptedDraft);
+                        if (decrypted) {
+                            const draft = JSON.parse(decrypted);
+                            if (draft && draft.formData && (draft.formData.client_id || draft.formData.quantity_tm || draft.formData.driver_name || draft.formData.license_plate || draft.formData.order_number)) {
+                                setSavedDraftData(draft);
+                                setShowDraftBanner(true);
+                            }
                         }
                     } catch(e) {}
                 }
@@ -84,12 +135,18 @@ export default function DispatchForm() {
             if (searchRef.current && !searchRef.current.contains(e.target)) {
                 setShowSuggestions(false);
             }
+            if (driverRef.current && !driverRef.current.contains(e.target)) {
+                setShowDriverSuggestions(false);
+            }
+            if (plateRef.current && !plateRef.current.contains(e.target)) {
+                setShowPlateSuggestions(false);
+            }
         };
         document.addEventListener('mousedown', handleClickOutside);
         return () => document.removeEventListener('mousedown', handleClickOutside);
     }, [isEdit, id]);
 
-    // Guardado automático en localStorage al realizar cambios en un formulario nuevo
+    // Guardado automático cifrado en localStorage al realizar cambios en un formulario nuevo
     useEffect(() => {
         if (!isEdit && !loading && !isRestoringRef.current) {
             if (formData.client_id || formData.quantity_tm || formData.driver_name || formData.license_plate || formData.order_number) {
@@ -108,7 +165,8 @@ export default function DispatchForm() {
                     selectedClientObj,
                     savedAt: new Date().toISOString()
                 };
-                localStorage.setItem('tripoliven_dispatch_draft', JSON.stringify(draftObj));
+                const encrypted = encryptDraft(JSON.stringify(draftObj));
+                localStorage.setItem('tripoliven_dispatch_draft', encrypted);
                 setDraftSavedTime(new Date());
             }
         }
@@ -161,7 +219,8 @@ export default function DispatchForm() {
             const res = await fetch(`${API_BASE_URL}/api/product-types`);
             if (res.ok) {
                 const data = await res.json();
-                const filtered = data.filter(pt => pt.status !== 'Inactivo' || pt.name === currentProductType);
+                const types = normalizeApiListResponse(data);
+                const filtered = types.filter(pt => pt.status !== 'Inactivo' || pt.name === currentProductType);
                 setProductTypes(filtered);
                 if (!isEdit && filtered.length > 0 && !formData.product_type) {
                     setFormData(prev => ({ ...prev, product_type: filtered[0].name }));
@@ -177,7 +236,7 @@ export default function DispatchForm() {
             const res = await fetch(`${API_BASE_URL}/api/clients`);
             if (res.ok) {
                 const data = await res.json();
-                setClients(data);
+                setClients(normalizeApiListResponse(data));
             }
         } catch (err) {
             console.error(err);
@@ -186,11 +245,10 @@ export default function DispatchForm() {
 
     const loadDispatch = async () => {
         try {
-            const res = await fetch(`${API_BASE_URL}/api/dispatches`);
+            const res = await fetch(`${API_BASE_URL}/api/dispatches/${id}`);
             if (res.ok) {
-                const data = await res.json();
-                const d = data.find(x => x.id.toString() === id);
-                if (d) {
+                const d = await res.json();
+                if (d && d.id) {
                     setFormData({
                         client_id: d.client_id || '',
                         product_type: d.product_type,
@@ -204,12 +262,16 @@ export default function DispatchForm() {
                     });
                     return d.product_type;
                 }
+            } else {
+                const fallback = await res.json();
+                console.error('Error al cargar despacho individual:', fallback);
             }
         } catch (err) {
             console.error(err);
         } finally {
             setLoading(false);
         }
+        return null;
     };
 
     const generateDefaults = async () => {
@@ -234,7 +296,8 @@ export default function DispatchForm() {
                 nextOrderNum = data.nextOrderNumber;
             }
             if (!nextOrderNum) {
-                nextOrderNum = 'TRP09X';
+                const randStr = Math.random().toString(36).substring(2, 6).toUpperCase();
+                nextOrderNum = `TRP${randStr}`;
             }
             setFormData(prev => ({
                 ...prev,
@@ -244,6 +307,40 @@ export default function DispatchForm() {
             setOrderNumberError('');
         } catch (err) {
             console.error(err);
+            const randStr = Math.random().toString(36).substring(2, 6).toUpperCase();
+            const nextOrderNum = `TRP${randStr}`;
+            setFormData(prev => ({
+                ...prev,
+                dispatch_datetime: serverDate,
+                order_number: nextOrderNum
+            }));
+            setOrderNumberError('');
+        }
+    };
+
+    const handleDriverChange = (e) => {
+        const val = e.target.value;
+        setFormData(prev => ({ ...prev, driver_name: val }));
+        if (val.trim() !== '') {
+            const filtered = (historicalSuggestions.drivers || []).filter(d => d.toLowerCase().includes(val.toLowerCase()));
+            setDriverSuggestions(filtered);
+            setShowDriverSuggestions(true);
+        } else {
+            setDriverSuggestions((historicalSuggestions.drivers || []).slice(0, 5));
+            setShowDriverSuggestions(true);
+        }
+    };
+
+    const handlePlateChange = (e) => {
+        const val = e.target.value.toUpperCase();
+        setFormData(prev => ({ ...prev, license_plate: val }));
+        if (val.trim() !== '') {
+            const filtered = (historicalSuggestions.plates || []).filter(p => p.toLowerCase().includes(val.toLowerCase()));
+            setPlateSuggestions(filtered);
+            setShowPlateSuggestions(true);
+        } else {
+            setPlateSuggestions((historicalSuggestions.plates || []).slice(0, 5));
+            setShowPlateSuggestions(true);
         }
     };
 
@@ -312,12 +409,17 @@ export default function DispatchForm() {
                     nextOrderNum = data.nextOrderNumber;
                 }
                 if (!nextOrderNum) {
-                    nextOrderNum = 'TRP09X';
+                    const randStr = Math.random().toString(36).substring(2, 6).toUpperCase();
+                    nextOrderNum = `TRP${randStr}`;
                 }
                 setFormData(prev => ({ ...prev, order_number: nextOrderNum }));
                 setOrderNumberError('');
             } catch (err) {
                 console.error(err);
+                const randStr = Math.random().toString(36).substring(2, 6).toUpperCase();
+                const nextOrderNum = `TRP${randStr}`;
+                setFormData(prev => ({ ...prev, order_number: nextOrderNum }));
+                setOrderNumberError('');
             }
         } else {
             checkOrderUniqueness(formData.order_number);
@@ -347,6 +449,27 @@ export default function DispatchForm() {
         const qty = parseFloat(qtyStr);
         if (isNaN(qty) || qty <= 0) {
             alert('La cantidad en toneladas métricas (tm) debe ser mayor a cero.');
+            return;
+        }
+
+        // Validación de cantidad máxima (100 TM)
+        if (qty > 100.0) {
+            alert('La cantidad de despacho no puede exceder las 100 Toneladas Métricas (TM) por viaje según la capacidad de carga vial permitida.');
+            return;
+        }
+
+        // Validación de rango de fecha y hora de despacho (±7 días respecto a la actual)
+        const dispatchDate = new Date(formData.dispatch_datetime);
+        if (isNaN(dispatchDate.getTime())) {
+            alert('La fecha y hora de despacho no tiene un formato válido.');
+            return;
+        }
+        const now = new Date();
+        const minDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+        const maxDate = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+
+        if (dispatchDate < minDate || dispatchDate > maxDate) {
+            alert('La fecha de despacho seleccionada debe estar en el rango de ±7 días respecto a la fecha actual del sistema para evitar errores de registro.');
             return;
         }
 
@@ -527,16 +650,21 @@ export default function DispatchForm() {
                                 required
                                 type="text"
                                 value={formData.order_number}
-                                readOnly={true}
-                                placeholder="Generando código..."
+                                onChange={handleOrderNumberChange}
+                                onBlur={handleOrderNumberBlur}
+                                placeholder="Ingresar código de orden..."
                                 style={{ 
                                     width: '100%', padding: '14px 16px', borderRadius: '14px', background: 'var(--bg-tertiary)', 
-                                    border: '1px solid var(--glass-border)', 
+                                    border: '1px solid', 
+                                    borderColor: orderNumberError ? '#ef4444' : 'var(--glass-border)',
                                     color: 'var(--text-primary)', fontFamily: 'inherit', 
-                                    fontSize: '0.95rem', fontWeight: '700', outline: 'none', transition: 'all 0.2s',
-                                    cursor: 'not-allowed', opacity: 0.8
+                                    fontSize: '0.95rem', fontWeight: '700', outline: 'none', transition: 'all 0.2s'
                                 }}
+                                onFocus={e => e.currentTarget.style.borderColor = orderNumberError ? '#ef4444' : 'var(--accent-primary)'}
                             />
+                            {orderNumberError && (
+                                <p style={{ color: '#ef4444', fontSize: '0.75rem', marginTop: '6px', fontWeight: '600' }}>{orderNumberError}</p>
+                            )}
                         </div>
                         <div>
                             <label style={{ display: 'block', marginBottom: '8px', color: 'var(--text-secondary)', fontSize: '0.9rem', fontWeight: '600' }}>Fecha y Hora Exacta de Salida *</label>
@@ -742,37 +870,93 @@ export default function DispatchForm() {
                     {/* SECCIÓN 5: LOGÍSTICA DE CAMIÓN */}
                     <h3 style={{ fontSize: '1.2rem', color: 'var(--text-primary)', marginBottom: '20px', fontWeight: '700' }}>Logística de Transporte (Opcional)</h3>
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '24px', marginBottom: '32px' }}>
-                        <div>
+                        <div ref={driverRef} style={{ position: 'relative' }}>
                             <label style={{ display: 'block', marginBottom: '8px', color: 'var(--text-secondary)', fontSize: '0.9rem', fontWeight: '600' }}>Nombre del Chofer / Transportista</label>
                             <input 
                                 type="text"
                                 placeholder="Nombre completo del conductor"
                                 value={formData.driver_name}
-                                onChange={e => setFormData({...formData, driver_name: e.target.value})}
+                                onChange={handleDriverChange}
+                                onFocus={() => {
+                                    setDriverSuggestions(formData.driver_name ? (historicalSuggestions.drivers || []).filter(d => d.toLowerCase().includes(formData.driver_name.toLowerCase())) : (historicalSuggestions.drivers || []).slice(0, 5));
+                                    setShowDriverSuggestions(true);
+                                }}
                                 style={{ 
                                     width: '100%', padding: '14px 16px', borderRadius: '14px', background: 'var(--bg-tertiary)', 
                                     border: '1px solid var(--glass-border)', color: 'var(--text-primary)', fontFamily: 'inherit', 
                                     fontSize: '0.95rem', outline: 'none', transition: 'border 0.2s'
                                 }}
-                                onFocus={e => e.currentTarget.style.borderColor = 'var(--accent-primary)'}
-                                onBlur={e => e.currentTarget.style.borderColor = 'var(--glass-border)'}
                             />
+                            {showDriverSuggestions && driverSuggestions.length > 0 && (
+                                <div style={{ 
+                                    position: 'absolute', top: '100%', left: 0, right: 0, marginTop: '4px',
+                                    background: 'var(--bg-secondary)', border: '1px solid var(--glass-border)',
+                                    borderRadius: '12px', overflow: 'hidden', zIndex: 30, boxShadow: '0 10px 25px rgba(0,0,0,0.3)',
+                                    backdropFilter: 'blur(10px)'
+                                }}>
+                                    {driverSuggestions.map((driver, idx) => (
+                                        <div 
+                                            key={idx}
+                                            onClick={() => {
+                                                setFormData(prev => ({ ...prev, driver_name: driver }));
+                                                setShowDriverSuggestions(false);
+                                            }}
+                                            style={{ 
+                                                padding: '10px 16px', borderBottom: idx === driverSuggestions.length - 1 ? 'none' : '1px solid var(--glass-border)', 
+                                                cursor: 'pointer', transition: 'background 0.2s', color: 'var(--text-primary)', fontSize: '0.9rem' 
+                                            }}
+                                            onMouseOver={e => e.currentTarget.style.background = 'var(--bg-tertiary)'}
+                                            onMouseOut={e => e.currentTarget.style.background = 'transparent'}
+                                        >
+                                            {driver}
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
                         </div>
-                        <div>
+                        <div ref={plateRef} style={{ position: 'relative' }}>
                             <label style={{ display: 'block', marginBottom: '8px', color: 'var(--text-secondary)', fontSize: '0.9rem', fontWeight: '600' }}>Placa del Vehículo / Batea</label>
                             <input 
                                 type="text"
                                 placeholder="Ej: A12B34C"
                                 value={formData.license_plate}
-                                onChange={e => setFormData({...formData, license_plate: e.target.value})}
+                                onChange={handlePlateChange}
+                                onFocus={() => {
+                                    setPlateSuggestions(formData.license_plate ? (historicalSuggestions.plates || []).filter(p => p.toLowerCase().includes(formData.license_plate.toLowerCase())) : (historicalSuggestions.plates || []).slice(0, 5));
+                                    setShowPlateSuggestions(true);
+                                }}
                                 style={{ 
                                     width: '100%', padding: '14px 16px', borderRadius: '14px', background: 'var(--bg-tertiary)', 
                                     border: '1px solid var(--glass-border)', color: 'var(--text-primary)', fontFamily: 'inherit', 
                                     fontSize: '0.95rem', outline: 'none', transition: 'border 0.2s', textTransform: 'uppercase'
                                 }}
-                                onFocus={e => e.currentTarget.style.borderColor = 'var(--accent-primary)'}
-                                onBlur={e => e.currentTarget.style.borderColor = 'var(--glass-border)'}
                             />
+                            {showPlateSuggestions && plateSuggestions.length > 0 && (
+                                <div style={{ 
+                                    position: 'absolute', top: '100%', left: 0, right: 0, marginTop: '4px',
+                                    background: 'var(--bg-secondary)', border: '1px solid var(--glass-border)',
+                                    borderRadius: '12px', overflow: 'hidden', zIndex: 30, boxShadow: '0 10px 25px rgba(0,0,0,0.3)',
+                                    backdropFilter: 'blur(10px)'
+                                }}>
+                                    {plateSuggestions.map((plate, idx) => (
+                                        <div 
+                                            key={idx}
+                                            onClick={() => {
+                                                setFormData(prev => ({ ...prev, license_plate: plate }));
+                                                setShowPlateSuggestions(false);
+                                            }}
+                                            style={{ 
+                                                padding: '10px 16px', borderBottom: idx === plateSuggestions.length - 1 ? 'none' : '1px solid var(--glass-border)', 
+                                                cursor: 'pointer', transition: 'background 0.2s', color: 'var(--text-primary)', fontSize: '0.9rem' 
+                                            }}
+                                            onMouseOver={e => e.currentTarget.style.background = 'var(--bg-tertiary)'}
+                                            onMouseOut={e => e.currentTarget.style.background = 'transparent'}
+                                        >
+                                            {plate}
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
                         </div>
                     </div>
 

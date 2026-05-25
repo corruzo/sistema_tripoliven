@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { API_BASE_URL } from './config';
+import { normalizeApiListResponse } from './utils/api';
 import { Search, Plus, Edit, Trash2, X, ChevronLeft, ChevronRight, Check, ShieldAlert } from 'lucide-react';
 
 const VENEZUELA_STATES = [
@@ -81,7 +82,7 @@ export default function Clients() {
                 throw new Error(`El servidor respondió con código ${res.status}`);
             }
             const data = await res.json();
-            setClients(data || []);
+            setClients(normalizeApiListResponse(data));
             setError(null);
         } catch (err) {
             console.error('Error al cargar clientes:', err);
